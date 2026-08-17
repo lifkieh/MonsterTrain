@@ -44,3 +44,7 @@
 *.app
 crashlytics-build.properties
 sysinfo.txt
+
+# Unity Android/IL2CPP build intermediates
+.utmp/
+.gradle/
