@@ -25,6 +25,10 @@ namespace MTA.App
         Text _detailName, _detailStats, _detailXp;
         Image _detailXpFill;
         string _detailSpecies;
+        RectTransform _career, _careerContent;
+        Text _careerHeader;
+        Button _resultContinueBtn;
+        List<CareerStage> _stages;
         BalanceConfig _cfg;
         SaveData _profile;
         List<string> _roster;
@@ -48,6 +52,7 @@ namespace MTA.App
             foreach (var s in _reg.All) pool.Add(s.speciesId);
             pool.Sort(System.StringComparer.Ordinal);
             _roster = pool;
+            _stages = Career.Build(pool);
             _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
             _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
@@ -73,6 +78,7 @@ namespace MTA.App
             BuildProgress(canvas.transform);
             BuildCollection(canvas.transform);
             BuildDetail(canvas.transform);
+            BuildCareer(canvas.transform);
             BuildPopup(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
@@ -89,6 +95,8 @@ namespace MTA.App
             _progress.gameObject.SetActive(p == GamePhase.Progress);
             _collection.gameObject.SetActive(p == GamePhase.Collection);
             _detail.gameObject.SetActive(p == GamePhase.Detail);
+            _career.gameObject.SetActive(p == GamePhase.Career);
+            if (p == GamePhase.Career) RefreshCareer();
             if (p == GamePhase.Detail) RefreshDetail();
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
@@ -132,6 +140,22 @@ namespace MTA.App
             if (rw.playerLevelsGained > 0) rt += "    PLAYER LEVEL UP!";
             if (rw.leveledUp.Count > 0) rt += "\nLeveled up: " + string.Join(", ", rw.leveledUp);
             if (rw.newlyUnlocked.Count > 0) rt += "\nUnlocked: " + string.Join(", ", rw.newlyUnlocked);
+
+            // Career: record a stage clear (first clear pays the reward once).
+            int stageIdx = _ctrl.Session.careerStageIndex;
+            bool career = stageIdx >= 0;
+            if (_resultContinueBtn != null) _resultContinueBtn.gameObject.SetActive(career);
+            if (career && won)
+            {
+                long bonus = Career.ClearStage(_profile, stageIdx, _stages[stageIdx].reward);
+                if (bonus > 0)
+                {
+                    SaveSystem.Save(_profile);
+                    rt += "\nSTAGE CLEARED!  +" + bonus + " coins   (" + Career.CompletionPercent(_profile) + "%)";
+                    if (Career.IsComplete(_profile)) rt += "\nCAREER COMPLETE!";
+                }
+            }
+
             _rewardText.text = rt;
             if (rw.newlyUnlocked.Count > 0) ShowNewMonster(rw.newlyUnlocked);   // new-monster popup
         }
@@ -314,6 +338,44 @@ namespace MTA.App
             RefreshDetail();
         }
 
+        void BuildCareer(Transform parent)
+        {
+            _career = UIFactory.Panel(parent, "CareerPanel", new Color(0.09f, 0.1f, 0.13f));
+            UIFactory.Label(_career, "CAREER", 48, new Vector2(0, 860), new Vector2(900, 90), _font);
+            _careerHeader = UIFactory.Label(_career, "", 30, new Vector2(0, 782), new Vector2(1000, 56), _font);
+            _careerHeader.color = new Color(1f, 0.9f, 0.5f);
+            var holder = new GameObject("CareerContent", typeof(RectTransform));
+            _careerContent = holder.GetComponent<RectTransform>(); _careerContent.SetParent(_career, false);
+            _careerContent.anchorMin = _careerContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _careerContent.sizeDelta = new Vector2(1040, 1400); _careerContent.anchoredPosition = new Vector2(0, -40);
+            UIFactory.Button(_career, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void RefreshCareer()
+        {
+            bool complete = Career.IsComplete(_profile);
+            _careerHeader.text = "Completion  " + Career.CompletionPercent(_profile) + "%" + (complete ? "    ALL CLEARED!" : "");
+            for (int i = _careerContent.childCount - 1; i >= 0; i--) Destroy(_careerContent.GetChild(i).gameObject);
+
+            const int cols = 2; float bw = 496, bh = 150, gx = 20, gy = 18;
+            float x0 = -(cols - 1) * (bw + gx) / 2f, y0 = 560;
+            for (int i = 0; i < _stages.Count; i++)
+            {
+                var stage = _stages[i];
+                bool cleared = Career.IsCleared(_profile, i);
+                bool unlocked = Career.IsUnlocked(_profile, i);
+                int c = i % cols, r = i / cols;
+                var pos = new Vector2(x0 + c * (bw + gx), y0 - r * (bh + gy));
+                string status = cleared ? "CLEARED" : unlocked ? "PLAY  (+" + stage.reward + ")" : "LOCKED";
+                var b = UIFactory.Button(_careerContent, stage.name + "\nLv " + stage.enemyLevel + "   " + status,
+                    pos, new Vector2(bw, bh), _font, () => _ctrl.SelectCareerStage(stage));
+                b.interactable = unlocked;
+                UIFactory.SetButtonColor(b, !unlocked ? new Color(0.2f, 0.2f, 0.24f)
+                    : cleared ? new Color(0.2f, 0.55f, 0.3f)
+                    : new Color(0.85f, 0.55f, 0.15f));   // current frontier highlighted
+            }
+        }
+
         void BuildPopup(Transform parent)
         {
             _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
@@ -340,15 +402,16 @@ namespace MTA.App
         void BuildMenu(Transform parent)
         {
             _menu = UIFactory.Panel(parent, "MenuPanel", new Color(0.08f, 0.09f, 0.12f));
-            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 400), new Vector2(1000, 100), _font);
-            UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 320), new Vector2(1000, 60), _font);
-            UIFactory.Button(_menu, "PLAY", new Vector2(0, 260), new Vector2(400, 100), _font, () => _ctrl.StartGame());
+            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 470), new Vector2(1000, 100), _font);
+            UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 392), new Vector2(1000, 60), _font);
+            UIFactory.Button(_menu, "PLAY", new Vector2(0, 300), new Vector2(400, 100), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "CAREER", new Vector2(0, 180), new Vector2(400, 100), _font, () => _ctrl.ToCareer());
             if (_hadSave)
-                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 130), new Vector2(400, 100), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, 0), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
-            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -130), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
-            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -260), new Vector2(400, 100), _font, ToggleMute);
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -390), new Vector2(400, 90), _font, Quit);
+                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 60), new Vector2(400, 100), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -60), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
+            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -180), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
+            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -300), new Vector2(400, 100), _font, ToggleMute);
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -420), new Vector2(400, 90), _font, Quit);
         }
 
         void BuildSelect(Transform parent, List<string> pool)
@@ -416,7 +479,9 @@ namespace MTA.App
             _rewardText = UIFactory.Label(_result, "", 26, new Vector2(0, -260), new Vector2(1000, 200), _font);
             _rewardText.color = new Color(1f, 0.92f, 0.5f);
             UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, -470), new Vector2(460, 120), _font, () => _ctrl.PlayAgain());
-            UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -640), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
+            _resultContinueBtn = UIFactory.Button(_result, "CAREER MAP", new Vector2(0, -620), new Vector2(460, 100), _font, () => _ctrl.ToCareer());
+            _resultContinueBtn.gameObject.SetActive(false);
+            UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -770), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
         }
 
         void OnPickSpecies(string id)

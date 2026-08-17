@@ -37,7 +37,7 @@ namespace MTA.Meta
         public static BattleResult Run(GameSession s, SpeciesRegistry reg, BalanceConfig cfg)
         {
             var a = BuildLeveled(s.playerTeam, s.playerLevels, GameSession.Level);
-            var b = Build(s.enemyTeam, GameSession.Level);
+            var b = Build(s.enemyTeam, s.enemyLevel);
             s.lastResult = BattleSimulator.Run(a, b, s.matchSeed, cfg, reg);
             return s.lastResult;
         }

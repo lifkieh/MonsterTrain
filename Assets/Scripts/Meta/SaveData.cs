@@ -24,6 +24,7 @@ namespace MTA.Meta
         public long coins;
         public int battlesPlayed;
         public int battlesWon;
+        public int careerStage;      // career frontier = number of stages cleared
         public bool muted;
         public List<string> unlocked = new List<string>();
         public List<string> seen = new List<string>();

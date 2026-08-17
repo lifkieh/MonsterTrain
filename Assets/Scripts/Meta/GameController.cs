@@ -16,6 +16,7 @@ namespace MTA.Meta
         readonly List<string> _pool;
         readonly int _seedBase;
         int _matchCount;
+        CareerStage _pending;   // set while a career stage is queued; null = casual match
 
         public GameController(SpeciesRegistry reg, BalanceConfig cfg, IList<string> speciesPool, int seedBase)
         {
@@ -29,7 +30,18 @@ namespace MTA.Meta
         public bool CanStartBattle => Session.PlayerTeamReady;
         public bool PlayerWon => MatchRunner.PlayerWon(Session);
 
-        public void StartGame() => Flow.GoTeamSelect();          // Menu -> TeamSelect
+        public bool InCareer => _pending != null;
+
+        public void StartGame() { _pending = null; Flow.GoTeamSelect(); }   // casual: Menu -> TeamSelect
+
+        // Career: queue a stage, then pick a team for it.
+        public void SelectCareerStage(CareerStage st)
+        {
+            _pending = st;
+            Session.ClearPlayer();
+            Session.lastResult = null;
+            Flow.GoTeamSelect();
+        }
 
         public void ToggleSpecies(string id) => Session.TogglePlayer(id);
 
@@ -39,8 +51,19 @@ namespace MTA.Meta
         {
             if (!Session.PlayerTeamReady) return null;
             Session.matchSeed = _seedBase + _matchCount++;
-            Session.enemyTeam = MatchRunner.RandomEnemy(_pool, GameSession.TeamSize,
-                new System.Random(Session.matchSeed));
+            if (_pending != null)
+            {
+                Session.enemyTeam = new List<string>(_pending.enemies);
+                Session.enemyLevel = _pending.enemyLevel;
+                Session.careerStageIndex = _pending.index;
+            }
+            else
+            {
+                Session.enemyTeam = MatchRunner.RandomEnemy(_pool, GameSession.TeamSize,
+                    new System.Random(Session.matchSeed));
+                Session.enemyLevel = GameSession.Level;
+                Session.careerStageIndex = -1;
+            }
             var result = MatchRunner.Run(Session, _reg, _cfg);
             Flow.GoBattle();
             return result;
@@ -57,6 +80,7 @@ namespace MTA.Meta
 
         public void ToMenu()                                     // -> MainMenu
         {
+            _pending = null;
             Session.ClearPlayer();
             Session.lastResult = null;
             Flow.GoMainMenu();
@@ -65,6 +89,7 @@ namespace MTA.Meta
         public void ToProgress() => Flow.GoProgress();
         public void ToCollection() => Flow.GoCollection();
         public void ToDetail() => Flow.GoDetail();
+        public void ToCareer() { _pending = null; Flow.GoCareer(); }   // -> career map
         public void BackToMenu() => Flow.GoMainMenu();
     }
 }
