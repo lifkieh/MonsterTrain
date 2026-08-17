@@ -24,6 +24,7 @@ namespace MTA.Battle
         readonly BattlePlayback _pb = new BattlePlayback();
         readonly Dictionary<int, UnitView> _views = new Dictionary<int, UnitView>();
         readonly Dictionary<int, AttackStyle> _styleByKey = new Dictionary<int, AttackStyle>();
+        readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
         List<ReplayEvent> _replay; int _rIdx;
         RectTransform _root, _stage; Font _font; FloatingTextPool _texts; BattleFx _fx;
         Dictionary<string, AttackStyle> _styleMap;
@@ -63,7 +64,7 @@ namespace MTA.Battle
             _stage.sizeDelta = new Vector2(1080, 1600); _stage.anchoredPosition = Vector2.zero;
             _texts = new FloatingTextPool(_stage, _font);
             _fx = new BattleFx(_stage);
-            _views.Clear(); _styleByKey.Clear();
+            _views.Clear(); _styleByKey.Clear(); _speciesByKey.Clear();
 
             var size = new Vector2(230, 150);
             float[] rowY = { 380f, 0f, -380f };
@@ -72,13 +73,17 @@ namespace MTA.Battle
                 int slot = Mathf.Clamp(u.slot, 0, 2);
                 float depth = slot * 30f;
                 float x = u.team == 0 ? -280f - depth : 280f + depth;
-                var color = u.team == 0 ? new Color(0.25f, 0.5f, 0.85f) : new Color(0.85f, 0.35f, 0.32f);
+                var teamColor = u.team == 0 ? new Color(0.2f, 0.4f, 0.75f) : new Color(0.75f, 0.28f, 0.26f);
+                var sc = SpeciesIdentity.ColorFor(u.speciesId);
+                var speciesColor = new Color(sc.r, sc.g, sc.b);
                 var v = new GameObject("UnitView").AddComponent<UnitView>();
                 v.transform.SetParent(_stage, false);
-                v.Build(_stage, new Vector2(x, rowY[slot]), size, color, _font, u.speciesId);
-                v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp);
+                v.Build(_stage, new Vector2(x, rowY[slot]), size, teamColor, speciesColor,
+                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font);
+                v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 int k = Key(u.team, u.slot);
                 _views[k] = v;
+                _speciesByKey[k] = u.speciesId;
                 _styleByKey[k] = (_styleMap != null && _styleMap.TryGetValue(u.speciesId, out var st)) ? st : AttackStyle.MeleeLunge;
             }
         }
@@ -106,6 +111,9 @@ namespace MTA.Battle
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration)
                 {
                     _finishedFired = true; _playing = false; _zoomTarget = 1.08f;
+                    foreach (var wu in _pb.Units)
+                        if (wu.team == _pb.WinnerTeam && wu.Alive && _views.TryGetValue(Key(wu.team, wu.slot), out var wv))
+                            wv.PlayVictory();
                     OnFinished?.Invoke(_pb.WinnerTeam);
                 }
             }
@@ -131,20 +139,28 @@ namespace MTA.Battle
                     Vector2 dir = new Vector2(e.actorTeam == 0 ? 1f : -1f, 0f);
                     Vector2 actorPos = PosOf(e.actorTeam, e.actorSlot);
 
+                    string actorSp = _speciesByKey.TryGetValue(Key(e.actorTeam, e.actorSlot), out var asp) ? asp : "";
                     if (_views.TryGetValue(Key(e.actorTeam, e.actorSlot), out var av))
                     {
                         av.PlayAttack(dir, DashDist(st, ult), ult);
-                        if (e.kind == ReplayEventKind.Skill) _texts.Spawn(av.BasePos + new Vector2(0, 95), "SKILL", COrange, 30);
-                        if (ult) { _texts.Spawn(av.BasePos + new Vector2(0, 95), "ULTIMATE", COrange, 42); _fx.Burst(av.BasePos, BurstKind.Ultimate); ZoomPunch(0.10f); Shake(16f); }
+                        // Unique per-species skill banner.
+                        if (e.kind == ReplayEventKind.Skill)
+                            _texts.Spawn(av.BasePos + new Vector2(0, 95), SpeciesIdentity.SkillWord(actorSp), COrange, 30);
+                        if (ult)
+                        {
+                            _texts.Spawn(av.BasePos + new Vector2(0, 100), "ULTIMATE", COrange, 42);
+                            _texts.Spawn(av.BasePos + new Vector2(0, 55), SpeciesIdentity.SkillWord(actorSp), COrange, 26);
+                            _fx.Burst(av.BasePos, BurstKind.Ultimate); ZoomPunch(0.10f); Shake(16f);
+                        }
                     }
 
                     if (!e.isBuff)
                     {
                         int tt = e.targetTeam, ts = e.targetSlot, amt = e.amount; bool crit = e.crit;
                         if (AttackStyles.IsRanged(st))
-                            _fx.Projectile(actorPos, PosOf(tt, ts), ProjColor(st), () => DoHit(tt, ts, amt, crit, ult, st));
+                            _fx.Projectile(actorPos, PosOf(tt, ts), ProjColor(st), () => DoHit(tt, ts, amt, crit, ult, st, actorSp));
                         else
-                            DoHit(tt, ts, amt, crit, ult, st);
+                            DoHit(tt, ts, amt, crit, ult, st, actorSp);
                     }
                     break;
                 }
@@ -169,12 +185,12 @@ namespace MTA.Battle
             }
         }
 
-        void DoHit(int tt, int ts, int amt, bool crit, bool ult, AttackStyle st)
+        void DoHit(int tt, int ts, int amt, bool crit, bool ult, AttackStyle st, string actorSp)
         {
             Vector2 tpos = PosOf(tt, ts);
             if (_views.TryGetValue(Key(tt, ts), out var tv)) tv.PlayHit(crit);
             _texts.Spawn(tpos + Jitter(), amt.ToString(), crit ? CCrit : CWhite, crit ? 42 : 30);
-            if (crit) _texts.Spawn(tpos + new Vector2(0, -70), "CRIT!", CCrit, 34);
+            if (crit) _texts.Spawn(tpos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
             _fx.Burst(tpos, ult ? BurstKind.Ultimate : crit ? BurstKind.Crit : MeleeBurst(st));
             HitStop(crit || ult ? 0.08f : 0.04f);
             Shake(ult ? 18f : crit ? 12f : 6f);

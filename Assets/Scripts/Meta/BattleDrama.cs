@@ -19,6 +19,8 @@ namespace MTA.Meta
         public WinTier tier;
         public string bannerTitle = "";
         public string damageLeader = "-", killsLeader = "-", healingLeader = "-";
+        public string mvpSpecies = "";     // top damage dealer (for the result showcase)
+        public int mvpTeam = -1;
 
         class U { public int maxHp, curHp, team, slot; public string sp; public bool alive = true; }
 
@@ -90,6 +92,9 @@ namespace MTA.Meta
             d.killsLeader = Leader(units, killBy);
             d.healingLeader = Leader(units, healBy);
 
+            int mvpKey = TopKey(dmgBy);
+            if (mvpKey >= 0 && units.TryGetValue(mvpKey, out var mu)) { d.mvpSpecies = mu.sp; d.mvpTeam = mu.team; }
+
             // Tier: comebacks (lead changes) => clutch; else by winner survivors.
             if (d.leadChanges >= 2 || (d.winnerAlive <= 1 && d.leadChanges >= 1)) { d.tier = WinTier.ClutchWin; d.bannerTitle = "Clutch Victory"; }
             else if (d.winnerAlive >= 3) { d.tier = WinTier.DominantWin; d.bannerTitle = "Total Domination"; }
@@ -99,6 +104,13 @@ namespace MTA.Meta
         }
 
         static int Get(Dictionary<int, int> m, int k) => m.TryGetValue(k, out var v) ? v : 0;
+
+        static int TopKey(Dictionary<int, int> by)
+        {
+            int bestKey = -1, best = 0;
+            foreach (var kv in by) if (kv.Value > best) { best = kv.Value; bestKey = kv.Key; }
+            return bestKey;
+        }
 
         // Team with higher summed HP fraction; -1 if tied.
         static int Leader(Dictionary<int, U> units)

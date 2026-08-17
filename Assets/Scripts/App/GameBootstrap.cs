@@ -18,6 +18,7 @@ namespace MTA.App
 
         RectTransform _menu, _select, _battle, _result;
         Text _selectCount, _resultBanner, _resultStats;
+        RectTransform _mvpHolder;
         Button _startBtn;
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
@@ -78,6 +79,44 @@ namespace MTA.App
                 "Damage Leader: " + d.damageLeader + "\n" +
                 "Kills Leader: " + d.killsLeader + "\n" +
                 "Healing Leader: " + d.healingLeader;
+
+            // MVP showcase (top damage dealer).
+            if (_mvpHolder != null)
+            {
+                for (int i = _mvpHolder.childCount - 1; i >= 0; i--) Destroy(_mvpHolder.GetChild(i).gameObject);
+                if (d != null && !string.IsNullOrEmpty(d.mvpSpecies))
+                {
+                    IconBadge(_mvpHolder, d.mvpSpecies, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(24, 0), 110, 44);
+                    UIFactory.Label(_mvpHolder, "MVP:  " + d.mvpSpecies + "  (" + (d.mvpTeam == 0 ? "You" : "Enemy") + ")",
+                        34, new Vector2(70, 0), new Vector2(660, 130), _font);
+                }
+            }
+        }
+
+        static Color SpColor(string id) { var c = SpeciesIdentity.ColorFor(id); return new Color(c.r, c.g, c.b); }
+
+        void DecorateCard(Button b, string id)
+        {
+            var rt = (RectTransform)b.transform;
+            var col = SpColor(id);
+            var strip = new GameObject("Strip", typeof(RectTransform), typeof(Image));
+            var srt = strip.GetComponent<RectTransform>(); srt.SetParent(rt, false);
+            srt.anchorMin = new Vector2(0, 0); srt.anchorMax = new Vector2(0, 1); srt.pivot = new Vector2(0, 0.5f);
+            srt.sizeDelta = new Vector2(16, 0); srt.anchoredPosition = Vector2.zero;
+            var si = strip.GetComponent<Image>(); si.color = col; si.raycastTarget = false;
+            IconBadge(rt, id, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(40, 0), 72, 30);
+        }
+
+        void IconBadge(RectTransform parent, string id, Vector2 amin, Vector2 amax, Vector2 pos, float sz, int fs)
+        {
+            var col = SpColor(id);
+            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            var irt = icon.GetComponent<RectTransform>(); irt.SetParent(parent, false);
+            irt.anchorMin = amin; irt.anchorMax = amax; irt.pivot = new Vector2(0, 0.5f);
+            irt.sizeDelta = new Vector2(sz, sz); irt.anchoredPosition = pos;
+            var ii = icon.GetComponent<Image>(); ii.color = new Color(col.r * 0.6f, col.g * 0.6f, col.b * 0.6f, 0.95f); ii.raycastTarget = false;
+            var lbl = UIFactory.Label(irt, SpeciesIdentity.Initial(id), fs, Vector2.zero, new Vector2(sz, sz), _font);
+            lbl.raycastTarget = false;
         }
 
         void BuildMenu(Transform parent)
@@ -105,8 +144,9 @@ namespace MTA.App
                 var sp = _reg.Get(id);
                 int col = i % cols, row = i / cols;
                 var pos = new Vector2(x0 + col * (cw + gapx), y0 - row * (ch + gapy));
-                var b = UIFactory.Button(_select, id + "\nHP" + sp.baseStats.hp + " ATK" + sp.baseStats.atk +
+                var b = UIFactory.Button(_select, "   " + id + "\n   HP" + sp.baseStats.hp + " ATK" + sp.baseStats.atk +
                     " SPD" + sp.baseStats.spd, pos, new Vector2(cw, ch), _font, () => OnPickSpecies(id));
+                DecorateCard(b, id);
                 _speciesButtons[id] = b;
             }
 
@@ -145,8 +185,11 @@ namespace MTA.App
         void BuildResult(Transform parent)
         {
             _result = UIFactory.Panel(parent, "ResultPanel", new Color(0.08f, 0.09f, 0.12f));
-            _resultBanner = UIFactory.Label(_result, "-", 64, new Vector2(0, 520), new Vector2(1020, 200), _font);
-            _resultStats = UIFactory.Label(_result, "", 30, new Vector2(0, 120), new Vector2(1000, 560), _font);
+            _resultBanner = UIFactory.Label(_result, "-", 64, new Vector2(0, 560), new Vector2(1020, 200), _font);
+            _mvpHolder = UIFactory.Panel(_result, "MvpHolder", new Color(0.14f, 0.15f, 0.2f, 0.9f));
+            _mvpHolder.anchorMin = _mvpHolder.anchorMax = new Vector2(0.5f, 0.5f);
+            _mvpHolder.sizeDelta = new Vector2(760, 150); _mvpHolder.anchoredPosition = new Vector2(0, 360);
+            _resultStats = UIFactory.Label(_result, "", 30, new Vector2(0, 30), new Vector2(1000, 480), _font);
             UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, -420), new Vector2(460, 120), _font, () => _ctrl.PlayAgain());
             UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -600), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
         }
