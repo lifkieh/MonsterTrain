@@ -24,6 +24,7 @@ namespace MTA.Meta
         public long coins;
         public int battlesPlayed;
         public int battlesWon;
+        public bool muted;
         public List<string> unlocked = new List<string>();
         public List<MonsterSave> collection = new List<MonsterSave>();
         public string lastSaveUtc = "";

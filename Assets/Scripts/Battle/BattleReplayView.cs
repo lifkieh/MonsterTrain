@@ -114,6 +114,7 @@ namespace MTA.Battle
                     foreach (var wu in _pb.Units)
                         if (wu.team == _pb.WinnerTeam && wu.Alive && _views.TryGetValue(Key(wu.team, wu.slot), out var wv))
                             wv.PlayVictory();
+                    AudioManager.Play(Sfx.Victory);
                     OnFinished?.Invoke(_pb.WinnerTeam);
                 }
             }
@@ -154,6 +155,9 @@ namespace MTA.Battle
                         }
                     }
 
+                    if (e.kind == ReplayEventKind.Skill) AudioManager.Play(Sfx.Skill);
+                    else if (ult) AudioManager.Play(Sfx.Ultimate);
+
                     if (!e.isBuff)
                     {
                         int tt = e.targetTeam, ts = e.targetSlot, amt = e.amount; bool crit = e.crit;
@@ -170,13 +174,14 @@ namespace MTA.Battle
                         hv.PlayHeal();
                         _texts.Spawn(hv.BasePos + Jitter(), "+" + e.amount, CHeal, 30);
                         _fx.Burst(hv.BasePos, BurstKind.Heal);
+                        AudioManager.Play(Sfx.Heal);
                     }
                     break;
                 case ReplayEventKind.Death:
                 {
                     Vector2 knock = new Vector2(e.targetTeam == 0 ? -1f : 1f, 0f);   // away from enemy
                     if (_views.TryGetValue(Key(e.targetTeam, e.targetSlot), out var dv)) dv.PlayDeath(knock);
-                    Shake(9f);
+                    Shake(9f); AudioManager.Play(Sfx.Death);
                     break;
                 }
                 case ReplayEventKind.Victory:
@@ -190,6 +195,7 @@ namespace MTA.Battle
             Vector2 tpos = PosOf(tt, ts);
             if (_views.TryGetValue(Key(tt, ts), out var tv)) tv.PlayHit(crit);
             _texts.Spawn(tpos + Jitter(), amt.ToString(), crit ? CCrit : CWhite, crit ? 42 : 30);
+            AudioManager.Play(crit ? Sfx.Crit : Sfx.Hit);
             if (crit) _texts.Spawn(tpos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
             _fx.Burst(tpos, ult ? BurstKind.Ultimate : crit ? BurstKind.Crit : MeleeBurst(st));
             HitStop(crit || ult ? 0.08f : 0.04f);

@@ -23,7 +23,7 @@ namespace MTA.App
         List<string> _roster;
         List<string> _lastTeam = new List<string>();
         bool _hadSave;
-        Button _startBtn;
+        Button _startBtn, _muteBtn;
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
         Dictionary<string, AttackStyle> _atkStyles;
@@ -48,6 +48,9 @@ namespace MTA.App
             _hadSave = SaveSystem.Exists();
             _profile = SaveSystem.Load() ?? Progression.NewGame(pool);
             if (!_hadSave) SaveSystem.Save(_profile);
+
+            MTA.Battle.AudioManager.Ensure();                       // audio feedback
+            MTA.Battle.AudioManager.Muted = _profile.muted;
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
                 new GameObject("EventSystem",
@@ -117,6 +120,16 @@ namespace MTA.App
 
         static Color SpColor(string id) { var c = SpeciesIdentity.ColorFor(id); return new Color(c.r, c.g, c.b); }
 
+        string MuteLabel() => "SOUND: " + (_profile.muted ? "OFF" : "ON");
+
+        void ToggleMute()
+        {
+            _profile.muted = !_profile.muted;
+            MTA.Battle.AudioManager.Muted = _profile.muted;
+            SaveSystem.Save(_profile);
+            if (_muteBtn != null) { var t = _muteBtn.GetComponentInChildren<Text>(); if (t != null) t.text = MuteLabel(); }
+        }
+
         void DecorateCard(Button b, string id)
         {
             var rt = (RectTransform)b.transform;
@@ -177,7 +190,8 @@ namespace MTA.App
             if (_hadSave)
                 UIFactory.Button(_menu, "CONTINUE", new Vector2(0, -60), new Vector2(400, 100), _font, () => _ctrl.StartGame());
             UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -200), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -340), new Vector2(400, 90), _font, Quit);
+            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -340), new Vector2(400, 90), _font, ToggleMute);
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -480), new Vector2(400, 90), _font, Quit);
         }
 
         void BuildSelect(Transform parent, List<string> pool)

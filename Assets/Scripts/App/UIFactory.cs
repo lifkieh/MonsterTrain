@@ -60,6 +60,7 @@ namespace MTA.App
             rt.anchoredPosition = pos;
             go.GetComponent<Image>().color = new Color(0.2f, 0.55f, 0.95f);
             var b = go.GetComponent<Button>();
+            b.onClick.AddListener(MTA.Battle.AudioManager.PlayClick);
             if (onClick != null) b.onClick.AddListener(() => onClick());
             Label(rt, text, 30, Vector2.zero, size, font);
             return b;

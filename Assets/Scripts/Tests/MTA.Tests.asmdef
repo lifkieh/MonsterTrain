@@ -4,6 +4,7 @@
     "references": [
         "MTA.Core",
         "MTA.Meta",
+        "MTA.Battle",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
