@@ -17,10 +17,12 @@ namespace MTA.App
         Font _font;
 
         RectTransform _menu, _select, _battle, _result;
-        Text _selectCount, _resultBanner;
+        Text _selectCount, _resultBanner, _resultStats;
         Button _startBtn;
         BattleReplayView _view;
+        Dictionary<string, SkillSlot> _slotMap;
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
+        readonly List<Button> _speedButtons = new List<Button>();
 
         void Start()
         {
@@ -32,6 +34,7 @@ namespace MTA.App
             foreach (var s in _reg.All) pool.Add(s.speciesId);
             pool.Sort(System.StringComparer.Ordinal);
             _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
+            _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
                 new GameObject("EventSystem",
@@ -56,11 +59,23 @@ namespace MTA.App
             _battle.gameObject.SetActive(p == GamePhase.Battle);
             _result.gameObject.SetActive(p == GamePhase.Result);
             if (p == GamePhase.TeamSelect) RefreshSelect();
-            if (p == GamePhase.Result)
-            {
-                _resultBanner.text = _ctrl.PlayerWon ? "VICTORY" : "DEFEAT";
-                _resultBanner.color = _ctrl.PlayerWon ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.5f);
-            }
+            if (p == GamePhase.Result) ShowResult();
+        }
+
+        void ShowResult()
+        {
+            bool won = _ctrl.PlayerWon;
+            var r = _ctrl.Session.lastResult;
+            var d = r != null ? BattleDrama.Compute(r) : null;
+            _resultBanner.text = (won ? "VICTORY" : "DEFEAT") + (d != null ? "\n" + d.bannerTitle : "");
+            _resultBanner.color = won ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.5f);
+            _resultStats.text = d == null ? "" :
+                "Winner: " + (d.winnerTeam == 0 ? "You" : "Enemy") + "\n" +
+                "Battle Duration: " + d.duration.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " s\n" +
+                "Survivors: " + d.winnerAlive + " vs " + d.loserAlive + "\n\n" +
+                "Damage Leader: " + d.damageLeader + "\n" +
+                "Kills Leader: " + d.killsLeader + "\n" +
+                "Healing Leader: " + d.healingLeader;
         }
 
         void BuildMenu(Transform parent)
@@ -100,16 +115,38 @@ namespace MTA.App
         void BuildBattle(Transform parent)
         {
             _battle = UIFactory.Panel(parent, "BattlePanel", new Color(0.06f, 0.07f, 0.09f));
-            UIFactory.Label(_battle, "BATTLE", 34, new Vector2(0, 820), new Vector2(600, 60), _font);
+            UIFactory.Label(_battle, "BATTLE", 30, new Vector2(0, 860), new Vector2(600, 50), _font);
             _view = _battle.gameObject.AddComponent<BattleReplayView>();
+
+            // Playback speed row (bottom).
+            float[] speeds = { 0.5f, 1f, 2f, 4f };
+            for (int i = 0; i < speeds.Length; i++)
+            {
+                float sp = speeds[i];
+                var b = UIFactory.Button(_battle, sp + "x", new Vector2(-330 + i * 220, -860), new Vector2(200, 90),
+                    _font, () => SetSpeed(sp));
+                _speedButtons.Add(b);
+            }
+            SetSpeed(1f);
+        }
+
+        void SetSpeed(float sp)
+        {
+            if (_view != null) _view.SetSpeed(sp);
+            for (int i = 0; i < _speedButtons.Count; i++)
+            {
+                bool active = Mathf.Approximately(new[] { 0.5f, 1f, 2f, 4f }[i], sp);
+                UIFactory.SetButtonColor(_speedButtons[i], active ? new Color(0.2f, 0.75f, 0.35f) : new Color(0.2f, 0.4f, 0.7f));
+            }
         }
 
         void BuildResult(Transform parent)
         {
             _result = UIFactory.Panel(parent, "ResultPanel", new Color(0.08f, 0.09f, 0.12f));
-            _resultBanner = UIFactory.Label(_result, "-", 72, new Vector2(0, 300), new Vector2(1000, 120), _font);
-            UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, 0), new Vector2(420, 110), _font, () => _ctrl.PlayAgain());
-            UIFactory.Button(_result, "MENU", new Vector2(0, -160), new Vector2(420, 90), _font, () => _ctrl.ToMenu());
+            _resultBanner = UIFactory.Label(_result, "-", 64, new Vector2(0, 520), new Vector2(1020, 200), _font);
+            _resultStats = UIFactory.Label(_result, "", 30, new Vector2(0, 120), new Vector2(1000, 560), _font);
+            UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, -420), new Vector2(460, 120), _font, () => _ctrl.PlayAgain());
+            UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -600), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
         }
 
         void OnPickSpecies(string id)
@@ -133,7 +170,8 @@ namespace MTA.App
         {
             var result = _ctrl.StartBattle();
             if (result == null) return;
-            _view.Play(result, _battle, _font);
+            var replay = ReplayBuilder.Build(result, _slotMap);
+            _view.Play(result, replay, _battle, _font);
         }
 
         static void Quit()
