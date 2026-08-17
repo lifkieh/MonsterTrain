@@ -61,5 +61,8 @@ namespace MTA.Meta
             Session.lastResult = null;
             Flow.GoMainMenu();
         }
+
+        public void ToProgress() => Flow.GoProgress();
+        public void BackToMenu() => Flow.GoMainMenu();
     }
 }

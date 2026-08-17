@@ -23,9 +23,20 @@ namespace MTA.Meta
             return e;
         }
 
+        public static TeamConfig BuildLeveled(IList<string> ids, IDictionary<string, int> levels, int defaultLevel)
+        {
+            var t = new TeamConfig();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                int lvl = (levels != null && levels.TryGetValue(ids[i], out var l)) ? l : defaultLevel;
+                t.units.Add(new UnitConfig { speciesId = ids[i], level = lvl });
+            }
+            return t;
+        }
+
         public static BattleResult Run(GameSession s, SpeciesRegistry reg, BalanceConfig cfg)
         {
-            var a = Build(s.playerTeam, GameSession.Level);
+            var a = BuildLeveled(s.playerTeam, s.playerLevels, GameSession.Level);
             var b = Build(s.enemyTeam, GameSession.Level);
             s.lastResult = BattleSimulator.Run(a, b, s.matchSeed, cfg, reg);
             return s.lastResult;

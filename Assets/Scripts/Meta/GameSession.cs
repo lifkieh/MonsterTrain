@@ -11,6 +11,7 @@ namespace MTA.Meta
 
         public readonly List<string> playerTeam = new List<string>();
         public List<string> enemyTeam = new List<string>();
+        public Dictionary<string, int> playerLevels;   // per-species level for the player team (null = fixed Level)
         public int matchSeed;
         public BattleResult lastResult;
 

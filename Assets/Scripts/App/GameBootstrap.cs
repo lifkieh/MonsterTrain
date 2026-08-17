@@ -16,9 +16,13 @@ namespace MTA.App
         SpeciesRegistry _reg;
         Font _font;
 
-        RectTransform _menu, _select, _battle, _result;
-        Text _selectCount, _resultBanner, _resultStats;
+        RectTransform _menu, _select, _battle, _result, _progress;
+        Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText;
         RectTransform _mvpHolder;
+        SaveData _profile;
+        List<string> _roster;
+        List<string> _lastTeam = new List<string>();
+        bool _hadSave;
         Button _startBtn;
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
@@ -35,9 +39,15 @@ namespace MTA.App
             var pool = new List<string>();
             foreach (var s in _reg.All) pool.Add(s.speciesId);
             pool.Sort(System.StringComparer.Ordinal);
+            _roster = pool;
             _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
             _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
+
+            // Meta progression: load or create the player profile.
+            _hadSave = SaveSystem.Exists();
+            _profile = SaveSystem.Load() ?? Progression.NewGame(pool);
+            if (!_hadSave) SaveSystem.Save(_profile);
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
                 new GameObject("EventSystem",
@@ -49,6 +59,7 @@ namespace MTA.App
             BuildSelect(canvas.transform, pool);
             BuildBattle(canvas.transform);
             BuildResult(canvas.transform);
+            BuildProgress(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
@@ -61,8 +72,10 @@ namespace MTA.App
             _select.gameObject.SetActive(p == GamePhase.TeamSelect);
             _battle.gameObject.SetActive(p == GamePhase.Battle);
             _result.gameObject.SetActive(p == GamePhase.Result);
+            _progress.gameObject.SetActive(p == GamePhase.Progress);
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
+            if (p == GamePhase.Progress) RefreshProgress();
         }
 
         void ShowResult()
@@ -91,6 +104,15 @@ namespace MTA.App
                         34, new Vector2(70, 0), new Vector2(660, 130), _font);
                 }
             }
+
+            // Meta progression: award XP/coins/levels/unlocks for this battle and save.
+            var rw = Progression.ApplyBattle(_profile, _lastTeam, won, _roster);
+            SaveSystem.Save(_profile);
+            string rt = "Rewards:  +" + rw.playerXp + " XP    +" + rw.coins + " coins";
+            if (rw.playerLevelsGained > 0) rt += "    PLAYER LEVEL UP!";
+            if (rw.leveledUp.Count > 0) rt += "\nLeveled up: " + string.Join(", ", rw.leveledUp);
+            if (rw.newlyUnlocked.Count > 0) rt += "\nUnlocked: " + string.Join(", ", rw.newlyUnlocked);
+            _rewardText.text = rt;
         }
 
         static Color SpColor(string id) { var c = SpeciesIdentity.ColorFor(id); return new Color(c.r, c.g, c.b); }
@@ -119,13 +141,43 @@ namespace MTA.App
             lbl.raycastTarget = false;
         }
 
+        void BuildProgress(Transform parent)
+        {
+            _progress = UIFactory.Panel(parent, "ProgressPanel", new Color(0.09f, 0.1f, 0.13f));
+            UIFactory.Label(_progress, "PROGRESS", 48, new Vector2(0, 840), new Vector2(900, 90), _font);
+            _progressText = UIFactory.Label(_progress, "", 28, new Vector2(0, -30), new Vector2(980, 1560), _font);
+            _progressText.alignment = TextAnchor.UpperLeft;
+            UIFactory.Button(_progress, "BACK", new Vector2(0, -880), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void RefreshProgress()
+        {
+            var d = _profile;
+            string s = "Player: " + d.playerName + "    Level " + d.playerLevel + "\n" +
+                       "XP: " + d.playerXp + " / " + Progression.PlayerXpForNext(d.playerLevel) + "\n" +
+                       "Coins: " + d.coins + "    Battles won: " + d.battlesWon + " / " + d.battlesPlayed + "\n\n" +
+                       "COLLECTION  (" + d.unlocked.Count + " / " + _roster.Count + " unlocked)\n";
+            foreach (var id in _roster)
+            {
+                var m = d.Find(id);
+                if (d.IsUnlocked(id) && m != null)
+                    s += "  " + id + "   Lv " + m.level + "   (" + m.xp + "/" + Progression.MonsterXpForNext(m.level) + ")\n";
+                else
+                    s += "  [LOCKED]  " + id + "\n";
+            }
+            _progressText.text = s;
+        }
+
         void BuildMenu(Transform parent)
         {
             _menu = UIFactory.Panel(parent, "MenuPanel", new Color(0.08f, 0.09f, 0.12f));
             UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 400), new Vector2(1000, 100), _font);
             UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 320), new Vector2(1000, 60), _font);
-            UIFactory.Button(_menu, "PLAY", new Vector2(0, 0), new Vector2(360, 110), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -160), new Vector2(360, 90), _font, Quit);
+            UIFactory.Button(_menu, "PLAY", new Vector2(0, 80), new Vector2(400, 110), _font, () => _ctrl.StartGame());
+            if (_hadSave)
+                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, -60), new Vector2(400, 100), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -200), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -340), new Vector2(400, 90), _font, Quit);
         }
 
         void BuildSelect(Transform parent, List<string> pool)
@@ -189,13 +241,16 @@ namespace MTA.App
             _mvpHolder = UIFactory.Panel(_result, "MvpHolder", new Color(0.14f, 0.15f, 0.2f, 0.9f));
             _mvpHolder.anchorMin = _mvpHolder.anchorMax = new Vector2(0.5f, 0.5f);
             _mvpHolder.sizeDelta = new Vector2(760, 150); _mvpHolder.anchoredPosition = new Vector2(0, 360);
-            _resultStats = UIFactory.Label(_result, "", 30, new Vector2(0, 30), new Vector2(1000, 480), _font);
-            UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, -420), new Vector2(460, 120), _font, () => _ctrl.PlayAgain());
-            UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -600), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
+            _resultStats = UIFactory.Label(_result, "", 28, new Vector2(0, 70), new Vector2(1000, 420), _font);
+            _rewardText = UIFactory.Label(_result, "", 26, new Vector2(0, -260), new Vector2(1000, 200), _font);
+            _rewardText.color = new Color(1f, 0.92f, 0.5f);
+            UIFactory.Button(_result, "PLAY AGAIN", new Vector2(0, -470), new Vector2(460, 120), _font, () => _ctrl.PlayAgain());
+            UIFactory.Button(_result, "BACK TO MENU", new Vector2(0, -640), new Vector2(460, 100), _font, () => _ctrl.ToMenu());
         }
 
         void OnPickSpecies(string id)
         {
+            if (!_profile.IsUnlocked(id)) return;   // locked monsters not selectable
             _ctrl.ToggleSpecies(id);
             RefreshSelect();
         }
@@ -205,14 +260,26 @@ namespace MTA.App
             _selectCount.text = _ctrl.Session.playerTeam.Count + " / " + GameSession.TeamSize;
             foreach (var kv in _speciesButtons)
             {
+                bool unlocked = _profile.IsUnlocked(kv.Key);
                 bool picked = _ctrl.Session.playerTeam.Contains(kv.Key);
-                UIFactory.SetButtonColor(kv.Value, picked ? new Color(0.2f, 0.75f, 0.35f) : new Color(0.2f, 0.55f, 0.95f));
+                kv.Value.interactable = unlocked;
+                UIFactory.SetButtonColor(kv.Value, !unlocked ? new Color(0.22f, 0.22f, 0.26f)
+                    : picked ? new Color(0.2f, 0.75f, 0.35f) : new Color(0.2f, 0.55f, 0.95f));
             }
             if (_startBtn != null) _startBtn.interactable = _ctrl.CanStartBattle;
         }
 
+        Dictionary<string, int> BuildLevelMap()
+        {
+            var m = new Dictionary<string, int>();
+            foreach (var ms in _profile.collection) m[ms.speciesId] = ms.level;
+            return m;
+        }
+
         void OnStartBattle()
         {
+            _lastTeam = new List<string>(_ctrl.Session.playerTeam);
+            _ctrl.Session.playerLevels = BuildLevelMap();   // player monsters fight at collection level
             var result = _ctrl.StartBattle();
             if (result == null) return;
             var replay = ReplayBuilder.Build(result, _slotMap);
