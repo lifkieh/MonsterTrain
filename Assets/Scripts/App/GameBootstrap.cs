@@ -17,10 +17,15 @@ namespace MTA.App
         Font _font;
 
         RectTransform _menu, _select, _battle, _result, _progress, _collection, _collContent, _popup;
-        Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText, _collHeader, _popupText;
+        Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText, _collHeader, _popupText, _popupTitle;
         RectTransform _mvpHolder;
         int _collFilter = -1;        // -1 = all, else (int)RoleTag
         bool _collSortRarity = true;
+        RectTransform _detail;
+        Text _detailName, _detailStats, _detailXp;
+        Image _detailXpFill;
+        string _detailSpecies;
+        BalanceConfig _cfg;
         SaveData _profile;
         List<string> _roster;
         List<string> _lastTeam = new List<string>();
@@ -37,6 +42,7 @@ namespace MTA.App
             _font = UIFactory.DefaultFont();
             _reg = SpeciesDatabase.LoadFromResources();
             var cfg = SpeciesDatabase.LoadBalance();
+            _cfg = cfg;
 
             var pool = new List<string>();
             foreach (var s in _reg.All) pool.Add(s.speciesId);
@@ -66,6 +72,7 @@ namespace MTA.App
             BuildResult(canvas.transform);
             BuildProgress(canvas.transform);
             BuildCollection(canvas.transform);
+            BuildDetail(canvas.transform);
             BuildPopup(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
@@ -81,6 +88,8 @@ namespace MTA.App
             _result.gameObject.SetActive(p == GamePhase.Result);
             _progress.gameObject.SetActive(p == GamePhase.Progress);
             _collection.gameObject.SetActive(p == GamePhase.Collection);
+            _detail.gameObject.SetActive(p == GamePhase.Detail);
+            if (p == GamePhase.Detail) RefreshDetail();
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
             if (p == GamePhase.Progress) RefreshProgress();
@@ -242,6 +251,67 @@ namespace MTA.App
             var stx = UIFactory.Label(tile, state, 22, new Vector2(0, -30), new Vector2(size.x - 20, 40), _font);
             stx.color = owned ? new Color(0.5f, 1f, 0.6f) : seen ? new Color(0.9f, 0.9f, 0.5f) : new Color(0.7f, 0.7f, 0.7f);
             if (seen) UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 26, new Vector2(0, -70), new Vector2(size.x - 20, 34), _font).color = new Color(1f, 0.85f, 0.3f);
+            if (owned)
+            {
+                var btn = tile.gameObject.AddComponent<Button>();
+                string cid = id;
+                btn.onClick.AddListener(MTA.Battle.AudioManager.PlayClick);
+                btn.onClick.AddListener(() => OpenDetail(cid));
+            }
+        }
+
+        void OpenDetail(string id) { _detailSpecies = id; _ctrl.ToDetail(); }
+
+        void BuildDetail(Transform parent)
+        {
+            _detail = UIFactory.Panel(parent, "DetailPanel", new Color(0.1f, 0.11f, 0.14f));
+            _detailName = UIFactory.Label(_detail, "", 46, new Vector2(0, 820), new Vector2(1000, 90), _font);
+
+            var bgo = new GameObject("XpBg", typeof(RectTransform), typeof(Image));
+            var bgr = bgo.GetComponent<RectTransform>(); bgr.SetParent(_detail, false);
+            bgr.anchorMin = bgr.anchorMax = new Vector2(0.5f, 0.5f); bgr.sizeDelta = new Vector2(720, 36); bgr.anchoredPosition = new Vector2(0, 700);
+            bgo.GetComponent<Image>().color = new Color(0, 0, 0, 0.6f);
+            var fgo = new GameObject("XpFill", typeof(RectTransform), typeof(Image)); _detailXpFill = fgo.GetComponent<Image>();
+            var fr = _detailXpFill.rectTransform; fr.SetParent(bgr, false); fr.anchorMin = Vector2.zero; fr.anchorMax = Vector2.one; fr.offsetMin = Vector2.zero; fr.offsetMax = Vector2.zero;
+            _detailXpFill.color = new Color(0.4f, 0.7f, 1f); _detailXpFill.type = Image.Type.Filled; _detailXpFill.fillMethod = Image.FillMethod.Horizontal; _detailXpFill.fillOrigin = 0;
+
+            _detailXp = UIFactory.Label(_detail, "", 26, new Vector2(0, 648), new Vector2(760, 40), _font);
+            _detailStats = UIFactory.Label(_detail, "", 28, new Vector2(0, 40), new Vector2(980, 900), _font);
+            _detailStats.alignment = TextAnchor.UpperCenter;
+            UIFactory.Button(_detail, "TRAIN  (-" + Progression.TrainCost + " coins)", new Vector2(0, -740), new Vector2(560, 120), _font, OnTrain);
+            UIFactory.Button(_detail, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
+        }
+
+        void RefreshDetail()
+        {
+            var id = _detailSpecies; if (string.IsNullOrEmpty(id)) return;
+            var sp = _reg.Get(id);
+            var m = _profile.Find(id) ?? new MonsterSave { speciesId = id, level = 1 };
+            _detailName.text = id + "    Lv " + m.level;
+            int next = Progression.MonsterXpForNext(m.level);
+            _detailXpFill.fillAmount = m.level >= Progression.MaxLevel ? 1f : Mathf.Clamp01((float)m.xp / next);
+            _detailXp.text = "XP  " + m.xp + " / " + next + "        Coins: " + _profile.coins;
+            _detailStats.text = StatsBlock(sp, m.level);
+        }
+
+        int Lg(SpeciesData sp, Stat s) => StatMath.LevelGain(sp.speciesId, s, GrowthTier.B, _cfg);
+        int Eff(SpeciesData sp, int lvl, Stat s) => sp.baseStats.Get(s) + Lg(sp, s) * (lvl - 1);
+
+        string StatsBlock(SpeciesData sp, int lvl)
+        {
+            string L(string n, Stat s) => n + ":  " + Eff(sp, lvl, s) + "   (+" + Lg(sp, s) + "/lvl)   next: " + Eff(sp, lvl + 1, s);
+            return "Role: " + MonsterMeta.Role(sp) + "     Rarity " + MonsterMeta.Stars(MonsterMeta.Rarity(sp)) + "\n\n" +
+                L("HP", Stat.HP) + "\n" + L("ATK", Stat.ATK) + "\n" + L("DEF", Stat.DEF) + "\n" +
+                L("SPD", Stat.SPD) + "\n" + L("INT", Stat.INT) + "\n" + L("LUCK", Stat.LUCK);
+        }
+
+        void OnTrain()
+        {
+            int gained = Progression.Train(_profile, _detailSpecies);
+            if (gained < 0) { ShowPopup("NOT ENOUGH COINS", "Need " + Progression.TrainCost + " coins.\nWin battles to earn more."); return; }
+            SaveSystem.Save(_profile);
+            if (gained > 0) { var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", _detailSpecies + "  reached  Lv " + (m != null ? m.level : 1)); }
+            RefreshDetail();
         }
 
         void BuildPopup(Transform parent)
@@ -249,19 +319,23 @@ namespace MTA.App
             _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
             var card = UIFactory.Panel(_popup, "PopupCard", new Color(0.15f, 0.16f, 0.22f));
             card.anchorMin = card.anchorMax = new Vector2(0.5f, 0.5f); card.sizeDelta = new Vector2(840, 520); card.anchoredPosition = Vector2.zero;
-            UIFactory.Label(card, "NEW MONSTER!", 48, new Vector2(0, 160), new Vector2(780, 100), _font).color = new Color(1f, 0.9f, 0.4f);
+            _popupTitle = UIFactory.Label(card, "NEW MONSTER!", 48, new Vector2(0, 160), new Vector2(780, 100), _font);
+            _popupTitle.color = new Color(1f, 0.9f, 0.4f);
             _popupText = UIFactory.Label(card, "", 36, new Vector2(0, 10), new Vector2(780, 220), _font);
             UIFactory.Button(card, "NICE!", new Vector2(0, -180), new Vector2(340, 110), _font, () => _popup.gameObject.SetActive(false));
             _popup.gameObject.SetActive(false);
         }
 
-        void ShowNewMonster(List<string> ids)
+        void ShowPopup(string title, string body)
         {
             if (_popup == null) return;
-            _popupText.text = string.Join("\n", ids);
+            _popupTitle.text = title;
+            _popupText.text = body;
             _popup.gameObject.SetActive(true);
             _popup.SetAsLastSibling();
         }
+
+        void ShowNewMonster(List<string> ids) => ShowPopup("NEW MONSTER!", string.Join("\n", ids));
 
         void BuildMenu(Transform parent)
         {

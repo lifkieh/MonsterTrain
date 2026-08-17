@@ -58,6 +58,22 @@ namespace MTA.Meta
         public static int PlayerXpForNext(int level) => 100 + (level - 1) * 60;
         public static int MonsterXpForNext(int level) => 50 + (level - 1) * 40;
         public const int StartingUnlocks = 6;
+        public const int TrainCost = 30;      // coins per training session
+        public const int TrainXp = 45;        // XP gained per session
+
+        // Spend coins to train one owned monster. Returns levels gained, or -1 if
+        // it can't be afforded / the monster isn't owned.
+        public static int Train(SaveData d, string id)
+        {
+            if (!d.IsUnlocked(id) || d.coins < TrainCost) return -1;
+            d.coins -= TrainCost;
+            var m = d.Find(id);
+            if (m == null) { m = new MonsterSave { speciesId = id, level = 1 }; d.collection.Add(m); }
+            int from = m.level;
+            m.xp += TrainXp;
+            while (m.level < MaxLevel && m.xp >= MonsterXpForNext(m.level)) { m.xp -= MonsterXpForNext(m.level); m.level++; }
+            return m.level - from;
+        }
 
         // Fresh profile: first N of the roster unlocked, each in the collection at L1.
         public static SaveData NewGame(IList<string> roster)
