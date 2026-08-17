@@ -21,6 +21,7 @@ namespace MTA.App
         Button _startBtn;
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
+        Dictionary<string, AttackStyle> _atkStyles;
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
         readonly List<Button> _speedButtons = new List<Button>();
 
@@ -35,6 +36,7 @@ namespace MTA.App
             pool.Sort(System.StringComparer.Ordinal);
             _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
+            _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
                 new GameObject("EventSystem",
@@ -171,7 +173,7 @@ namespace MTA.App
             var result = _ctrl.StartBattle();
             if (result == null) return;
             var replay = ReplayBuilder.Build(result, _slotMap);
-            _view.Play(result, replay, _battle, _font);
+            _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 
         static void Quit()
