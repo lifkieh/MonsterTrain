@@ -1,0 +1,20 @@
+{
+    "name": "MTA.App",
+    "rootNamespace": "MTA.App",
+    "references": [
+        "MTA.Core",
+        "MTA.Meta",
+        "MTA.Battle",
+        "MTA.Data",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

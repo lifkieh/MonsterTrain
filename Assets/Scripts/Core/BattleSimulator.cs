@@ -25,6 +25,10 @@ namespace MTA.Core
             BuildTeam(b, 1, state.teamB, seed, rng, cfg, registry);
             log.Add(new BattleEvent { t = 0, kind = "Start",
                 extra = state.teamA.Count + "v" + state.teamB.Count + ";seed=" + seed });
+            // Per-unit spawn events carry maxHp + species so the view can replay
+            // HP bars from the log alone (log is the only sim->view contract).
+            EmitSpawns(state.teamA, log);
+            EmitSpawns(state.teamB, log);
 
             double lastStallTick = cfg.antiStallStart;
 
@@ -135,6 +139,16 @@ namespace MTA.Core
             for (int i = 0; i < 4; i++)
                 h = (h ^ (byte)(v >> (i * 8))) * prime;
             return h;
+        }
+
+        static void EmitSpawns(List<CombatUnit> team, List<BattleEvent> log)
+        {
+            for (int i = 0; i < team.Count; i++)
+            {
+                var u = team[i];
+                log.Add(new BattleEvent { t = 0, kind = "Spawn",
+                    actorTeam = u.team, actorSlot = u.slot, final = u.maxHp, extra = u.speciesId });
+            }
         }
 
         static BattleResult HardResolve(BattleState s, BalanceConfig cfg, Random rng,

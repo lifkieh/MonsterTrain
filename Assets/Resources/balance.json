@@ -1,0 +1,20 @@
+{
+  "k": 50,
+  "critPerLuck": 0.005,
+  "critCap": 0.30,
+  "critMultiplier": 1.5,
+  "minDamage": 1,
+  "apsPerSpdLow": 0.02,
+  "spdKink": 25,
+  "apsPerSpdHigh": 0.01,
+  "apsCap": 1.0,
+  "tierMultipliers": [0.6, 0.8, 1.0, 1.25, 1.5],
+  "defaultGainRates": [2.5, 1.0, 0.8, 0.6, 1.0, 0.4],
+  "speciesGainRates": [],
+  "statPointsPerLevel": 3,
+  "trainingBaseYields": [2, 4, 2, 2],
+  "antiStallStart": 75,
+  "antiStallInterval": 10,
+  "antiStallIncrement": 0.05,
+  "hardResolveTime": 120
+}

@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 03553d4384ae3c841ae273ed7c1b791f, type: 3}
+  m_Name: bat
+  m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
+  speciesId: bat
+  displayName: Bat
+  baseStats:
+    hp: 70
+    atk: 18
+    def: 8
+    spd: 20
+    intel: 10
+    luck: 12
+  growth:
+    perStat:
+    - d: 3
+      c: 2
+      b: 1
+      a: 0
+      s: 0
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+    - d: 3
+      c: 2
+      b: 1
+      a: 0
+      s: 0
+    - d: 0
+      c: 0
+      b: 1
+      a: 2
+      s: 3
+    - d: 2
+      c: 3
+      b: 2
+      a: 1
+      s: 0
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+  basicSkill: {fileID: 11400000, guid: d3f51536a8d0b374db32c54ef0450c57, type: 2}
+  activeSkill: {fileID: 11400000, guid: 98973dfd699e19940930fcbb969ff964, type: 2}
+  ultimateSkill: {fileID: 11400000, guid: 2117df39f7530034aa71ae33aa6ca463, type: 2}
+  portrait: {fileID: 0}
+  battleSprite: {fileID: 0}

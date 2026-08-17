@@ -3,6 +3,7 @@
     "rootNamespace": "MTA.Tests",
     "references": [
         "MTA.Core",
+        "MTA.Meta",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
