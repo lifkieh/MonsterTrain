@@ -26,6 +26,7 @@ namespace MTA.Meta
         public int battlesWon;
         public bool muted;
         public List<string> unlocked = new List<string>();
+        public List<string> seen = new List<string>();
         public List<MonsterSave> collection = new List<MonsterSave>();
         public string lastSaveUtc = "";
 
@@ -36,6 +37,8 @@ namespace MTA.Meta
         }
 
         public bool IsUnlocked(string speciesId) => unlocked.Contains(speciesId);
+        public bool IsSeen(string speciesId) => IsUnlocked(speciesId) || seen.Contains(speciesId);
+        public void MarkSeen(string speciesId) { if (!seen.Contains(speciesId) && !IsUnlocked(speciesId)) seen.Add(speciesId); }
         public int LevelOf(string speciesId) { var m = Find(speciesId); return m != null ? m.level : 1; }
     }
 

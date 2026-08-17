@@ -63,6 +63,7 @@ namespace MTA.Meta
         }
 
         public void ToProgress() => Flow.GoProgress();
+        public void ToCollection() => Flow.GoCollection();
         public void BackToMenu() => Flow.GoMainMenu();
     }
 }

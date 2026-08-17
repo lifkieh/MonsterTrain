@@ -16,9 +16,11 @@ namespace MTA.App
         SpeciesRegistry _reg;
         Font _font;
 
-        RectTransform _menu, _select, _battle, _result, _progress;
-        Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText;
+        RectTransform _menu, _select, _battle, _result, _progress, _collection, _collContent, _popup;
+        Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText, _collHeader, _popupText;
         RectTransform _mvpHolder;
+        int _collFilter = -1;        // -1 = all, else (int)RoleTag
+        bool _collSortRarity = true;
         SaveData _profile;
         List<string> _roster;
         List<string> _lastTeam = new List<string>();
@@ -63,6 +65,8 @@ namespace MTA.App
             BuildBattle(canvas.transform);
             BuildResult(canvas.transform);
             BuildProgress(canvas.transform);
+            BuildCollection(canvas.transform);
+            BuildPopup(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
@@ -76,9 +80,11 @@ namespace MTA.App
             _battle.gameObject.SetActive(p == GamePhase.Battle);
             _result.gameObject.SetActive(p == GamePhase.Result);
             _progress.gameObject.SetActive(p == GamePhase.Progress);
+            _collection.gameObject.SetActive(p == GamePhase.Collection);
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
             if (p == GamePhase.Progress) RefreshProgress();
+            if (p == GamePhase.Collection) RefreshCollection();
         }
 
         void ShowResult()
@@ -108,6 +114,8 @@ namespace MTA.App
                 }
             }
 
+            // Encyclopedia: mark the enemies we just fought as seen.
+            foreach (var e in _ctrl.Session.enemyTeam) _profile.MarkSeen(e);
             // Meta progression: award XP/coins/levels/unlocks for this battle and save.
             var rw = Progression.ApplyBattle(_profile, _lastTeam, won, _roster);
             SaveSystem.Save(_profile);
@@ -116,6 +124,7 @@ namespace MTA.App
             if (rw.leveledUp.Count > 0) rt += "\nLeveled up: " + string.Join(", ", rw.leveledUp);
             if (rw.newlyUnlocked.Count > 0) rt += "\nUnlocked: " + string.Join(", ", rw.newlyUnlocked);
             _rewardText.text = rt;
+            if (rw.newlyUnlocked.Count > 0) ShowNewMonster(rw.newlyUnlocked);   // new-monster popup
         }
 
         static Color SpColor(string id) { var c = SpeciesIdentity.ColorFor(id); return new Color(c.r, c.g, c.b); }
@@ -181,17 +190,91 @@ namespace MTA.App
             _progressText.text = s;
         }
 
+        void BuildCollection(Transform parent)
+        {
+            _collection = UIFactory.Panel(parent, "CollectionPanel", new Color(0.09f, 0.1f, 0.13f));
+            _collHeader = UIFactory.Label(_collection, "COLLECTION", 40, new Vector2(0, 880), new Vector2(1020, 80), _font);
+            string[] fl = { "All", "Tank", "Bruiser", "Assassin", "Mage", "Support" };
+            for (int i = 0; i < fl.Length; i++)
+            {
+                int fi = i - 1; float x = -450 + i * 180;
+                UIFactory.Button(_collection, fl[i], new Vector2(x, 770), new Vector2(168, 70), _font, () => { _collFilter = fi; RefreshCollection(); });
+            }
+            UIFactory.Button(_collection, "Sort", new Vector2(0, 686), new Vector2(240, 66), _font, () => { _collSortRarity = !_collSortRarity; RefreshCollection(); });
+            var holder = new GameObject("CollContent", typeof(RectTransform));
+            _collContent = holder.GetComponent<RectTransform>(); _collContent.SetParent(_collection, false);
+            _collContent.anchorMin = _collContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _collContent.sizeDelta = new Vector2(1040, 1300); _collContent.anchoredPosition = new Vector2(0, -60);
+            UIFactory.Button(_collection, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void RefreshCollection()
+        {
+            int owned = 0; foreach (var id in _roster) if (_profile.IsUnlocked(id)) owned++;
+            _collHeader.text = "COLLECTION   " + MonsterMeta.OwnedPercent(_profile, _roster) + "%   (" + owned + "/" + _roster.Count + ")";
+            for (int i = _collContent.childCount - 1; i >= 0; i--) Destroy(_collContent.GetChild(i).gameObject);
+
+            var list = new List<string>();
+            foreach (var id in _roster)
+                if (_collFilter < 0 || (int)MonsterMeta.Role(_reg.Get(id)) == _collFilter) list.Add(id);
+            if (_collSortRarity) list.Sort((a, b) => MonsterMeta.Rarity(_reg.Get(b)).CompareTo(MonsterMeta.Rarity(_reg.Get(a))));
+            else list.Sort(System.StringComparer.Ordinal);
+
+            const int cols = 3; float tw = 330, th = 200, gx = 18, gy = 18;
+            float x0 = -(cols - 1) * (tw + gx) / 2f, y0 = 540;
+            for (int i = 0; i < list.Count; i++)
+            {
+                int c = i % cols, r = i / cols;
+                BuildTile(list[i], new Vector2(x0 + c * (tw + gx), y0 - r * (th + gy)), new Vector2(tw, th));
+            }
+        }
+
+        void BuildTile(string id, Vector2 pos, Vector2 size)
+        {
+            var sp = _reg.Get(id);
+            bool owned = _profile.IsUnlocked(id), seen = _profile.IsSeen(id);
+            var m = _profile.Find(id);
+            var tile = UIFactory.Panel(_collContent, "Tile", owned ? new Color(SpColor(id).r * 0.35f, SpColor(id).g * 0.35f, SpColor(id).b * 0.35f, 0.95f) : new Color(0.16f, 0.16f, 0.2f, 0.95f));
+            tile.anchorMin = tile.anchorMax = new Vector2(0.5f, 0.5f); tile.sizeDelta = size; tile.anchoredPosition = pos;
+            if (seen) IconBadge(tile, id, new Vector2(0, 1), new Vector2(0, 1), new Vector2(12, -12), 64, 26);
+            UIFactory.Label(tile, seen ? id : "???", 26, new Vector2(0, 30), new Vector2(size.x - 20, 46), _font);
+            string state = owned ? "OWNED  Lv " + (m != null ? m.level : 1) : seen ? "SEEN" : "LOCKED";
+            var stx = UIFactory.Label(tile, state, 22, new Vector2(0, -30), new Vector2(size.x - 20, 40), _font);
+            stx.color = owned ? new Color(0.5f, 1f, 0.6f) : seen ? new Color(0.9f, 0.9f, 0.5f) : new Color(0.7f, 0.7f, 0.7f);
+            if (seen) UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 26, new Vector2(0, -70), new Vector2(size.x - 20, 34), _font).color = new Color(1f, 0.85f, 0.3f);
+        }
+
+        void BuildPopup(Transform parent)
+        {
+            _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
+            var card = UIFactory.Panel(_popup, "PopupCard", new Color(0.15f, 0.16f, 0.22f));
+            card.anchorMin = card.anchorMax = new Vector2(0.5f, 0.5f); card.sizeDelta = new Vector2(840, 520); card.anchoredPosition = Vector2.zero;
+            UIFactory.Label(card, "NEW MONSTER!", 48, new Vector2(0, 160), new Vector2(780, 100), _font).color = new Color(1f, 0.9f, 0.4f);
+            _popupText = UIFactory.Label(card, "", 36, new Vector2(0, 10), new Vector2(780, 220), _font);
+            UIFactory.Button(card, "NICE!", new Vector2(0, -180), new Vector2(340, 110), _font, () => _popup.gameObject.SetActive(false));
+            _popup.gameObject.SetActive(false);
+        }
+
+        void ShowNewMonster(List<string> ids)
+        {
+            if (_popup == null) return;
+            _popupText.text = string.Join("\n", ids);
+            _popup.gameObject.SetActive(true);
+            _popup.SetAsLastSibling();
+        }
+
         void BuildMenu(Transform parent)
         {
             _menu = UIFactory.Panel(parent, "MenuPanel", new Color(0.08f, 0.09f, 0.12f));
             UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 400), new Vector2(1000, 100), _font);
             UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 320), new Vector2(1000, 60), _font);
-            UIFactory.Button(_menu, "PLAY", new Vector2(0, 80), new Vector2(400, 110), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "PLAY", new Vector2(0, 260), new Vector2(400, 100), _font, () => _ctrl.StartGame());
             if (_hadSave)
-                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, -60), new Vector2(400, 100), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -200), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
-            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -340), new Vector2(400, 90), _font, ToggleMute);
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -480), new Vector2(400, 90), _font, Quit);
+                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 130), new Vector2(400, 100), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, 0), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
+            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -130), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
+            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -260), new Vector2(400, 100), _font, ToggleMute);
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -390), new Vector2(400, 90), _font, Quit);
         }
 
         void BuildSelect(Transform parent, List<string> pool)
