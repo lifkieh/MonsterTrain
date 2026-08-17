@@ -41,8 +41,73 @@ namespace MTA.App.EditorTools
             // debug keystore automatically. Fine for sideloading, not for Play Store.
             PlayerSettings.Android.useCustomKeystore = false;
 
+            // Release identity: version name + code.
+            PlayerSettings.bundleVersion = ReleaseVersion;
+            PlayerSettings.Android.bundleVersionCode = ReleaseVersionCode;
+
+            ApplyBranding();
+
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
-            Debug.Log("MTA: Android settings configured (portrait, IL2CPP/ARM64, minSdk 24).");
+            Debug.Log("MTA: Android settings configured (portrait, IL2CPP/ARM64, minSdk 24, v" + ReleaseVersion + ").");
+        }
+
+        public const string ReleaseVersion = "0.1.0";
+        public const int ReleaseVersionCode = 1;
+
+        // App icon + splash background. Wrapped so a branding hiccup never fails the
+        // build; the icon is generated procedurally (no art assets required).
+        static void ApplyBranding()
+        {
+            try
+            {
+                var icon = MakeIcon(512);
+                var sizes = PlayerSettings.GetIconSizes(NamedBuildTarget.Android, IconKind.Application);
+                if (sizes != null && sizes.Length > 0)
+                {
+                    var icons = new Texture2D[sizes.Length];
+                    for (int i = 0; i < icons.Length; i++) icons[i] = icon;
+                    PlayerSettings.SetIcons(NamedBuildTarget.Android, icons, IconKind.Application);
+                }
+            }
+            catch (System.Exception e) { Debug.LogWarning("MTA: icon branding skipped — " + e.Message); }
+
+            try
+            {
+                PlayerSettings.SplashScreen.show = true;
+                PlayerSettings.SplashScreen.backgroundColor = new Color(0.08f, 0.09f, 0.12f, 1f);
+            }
+            catch (System.Exception e) { Debug.LogWarning("MTA: splash branding skipped — " + e.Message); }
+        }
+
+        // A simple, recognizable monster mark: gradient field + glowing body orb + eyes.
+        static Texture2D MakeIcon(int size)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var px = new Color32[size * size];
+            var top = new Color(0.16f, 0.55f, 0.95f);
+            var bot = new Color(0.45f, 0.2f, 0.75f);
+            var body = new Color(0.98f, 0.85f, 0.35f);
+            float cx = size * 0.5f, cy = size * 0.46f, rBody = size * 0.30f;
+            float eyeR = size * 0.05f, eyeDx = size * 0.11f, eyeDy = size * 0.04f;
+            for (int y = 0; y < size; y++)
+            {
+                float t = (float)y / (size - 1);
+                var bg = Color.Lerp(bot, top, t);
+                for (int x = 0; x < size; x++)
+                {
+                    var c = bg;
+                    float db = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    if (db < rBody) c = Color.Lerp(body, bg, Mathf.SmoothStep(0.75f, 1f, db / rBody));
+                    // eyes
+                    float e1 = Mathf.Sqrt((x - (cx - eyeDx)) * (x - (cx - eyeDx)) + (y - (cy + eyeDy)) * (y - (cy + eyeDy)));
+                    float e2 = Mathf.Sqrt((x - (cx + eyeDx)) * (x - (cx + eyeDx)) + (y - (cy + eyeDy)) * (y - (cy + eyeDy)));
+                    if (e1 < eyeR || e2 < eyeR) c = new Color(0.1f, 0.1f, 0.14f);
+                    px[y * size + x] = c;
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+            return tex;
         }
 
         [MenuItem("MTA/Build Android APK")]

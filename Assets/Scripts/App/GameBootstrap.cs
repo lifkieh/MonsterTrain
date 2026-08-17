@@ -32,6 +32,8 @@ namespace MTA.App
         RectTransform _daily;
         Text _dailyInfo, _dailyHistory;
         Button _dailyClaimBtn;
+        RectTransform _settings, _about, _loading;
+        Text _settingsInfo;
         BalanceConfig _cfg;
         SaveData _profile;
         List<string> _roster;
@@ -67,6 +69,7 @@ namespace MTA.App
 
             MTA.Battle.AudioManager.Ensure();                       // audio feedback
             MTA.Battle.AudioManager.Muted = _profile.muted;
+            ApplyDisplaySettings();                                 // fps + quality from save
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
                 new GameObject("EventSystem",
@@ -83,13 +86,17 @@ namespace MTA.App
             BuildDetail(canvas.transform);
             BuildCareer(canvas.transform);
             BuildDaily(canvas.transform);
+            BuildSettings(canvas.transform);
+            BuildAbout(canvas.transform);
             BuildPopup(canvas.transform);
+            BuildLoading(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
             OnPhase(_ctrl.Flow.Phase);
             // Retention: greet the player with their daily reward on launch.
             if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
+            StartCoroutine(HideLoading());   // brief branded loading screen
         }
 
         void OnPhase(GamePhase p)
@@ -103,8 +110,11 @@ namespace MTA.App
             _detail.gameObject.SetActive(p == GamePhase.Detail);
             _career.gameObject.SetActive(p == GamePhase.Career);
             _daily.gameObject.SetActive(p == GamePhase.Daily);
+            _settings.gameObject.SetActive(p == GamePhase.Settings);
+            _about.gameObject.SetActive(p == GamePhase.About);
             if (p == GamePhase.Career) RefreshCareer();
             if (p == GamePhase.Daily) RefreshDaily();
+            if (p == GamePhase.Settings) RefreshSettings();
             if (p == GamePhase.Detail) RefreshDetail();
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
@@ -424,6 +434,88 @@ namespace MTA.App
             RefreshDaily();
         }
 
+        void ApplyDisplaySettings()
+        {
+            Application.targetFrameRate = _profile.targetFps <= 0 ? 60 : _profile.targetFps;
+            int max = Mathf.Max(0, QualitySettings.names.Length - 1);
+            QualitySettings.SetQualityLevel(_profile.quality <= 0 ? 0 : max, true);
+        }
+
+        void BuildLoading(Transform parent)
+        {
+            _loading = UIFactory.Panel(parent, "LoadingPanel", new Color(0.06f, 0.07f, 0.1f));
+            UIFactory.Label(_loading, "TRAIN YOUR MONSTER", 54, new Vector2(0, 120), new Vector2(1000, 100), _font);
+            UIFactory.Label(_loading, "LOADING...", 34, new Vector2(0, -40), new Vector2(800, 70), _font)
+                .color = new Color(0.7f, 0.8f, 1f);
+            UIFactory.Label(_loading, "v" + Application.version, 26, new Vector2(0, -820), new Vector2(600, 50), _font)
+                .color = new Color(0.6f, 0.6f, 0.7f);
+            _loading.SetAsLastSibling();
+        }
+
+        System.Collections.IEnumerator HideLoading()
+        {
+            yield return new WaitForSeconds(0.7f);
+            if (_loading != null) _loading.gameObject.SetActive(false);
+        }
+
+        void BuildSettings(Transform parent)
+        {
+            _settings = UIFactory.Panel(parent, "SettingsPanel", new Color(0.09f, 0.1f, 0.13f));
+            UIFactory.Label(_settings, "SETTINGS", 48, new Vector2(0, 840), new Vector2(1000, 90), _font);
+            _settingsInfo = UIFactory.Label(_settings, "", 32, new Vector2(0, 660), new Vector2(1000, 130), _font);
+            _muteBtn = UIFactory.Button(_settings, MuteLabel(), new Vector2(0, 470), new Vector2(560, 110), _font, ToggleMute);
+            UIFactory.Button(_settings, "FRAME RATE", new Vector2(0, 330), new Vector2(560, 110), _font, ToggleFps);
+            UIFactory.Button(_settings, "QUALITY", new Vector2(0, 190), new Vector2(560, 110), _font, ToggleQuality);
+            UIFactory.Button(_settings, "ABOUT / CREDITS", new Vector2(0, 30), new Vector2(560, 110), _font, () => _ctrl.ToAbout());
+            UIFactory.Label(_settings, "v" + Application.version + "    com.trainyourmonster.game", 24, new Vector2(0, -740), new Vector2(1000, 50), _font)
+                .color = new Color(0.6f, 0.6f, 0.7f);
+            UIFactory.Button(_settings, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void RefreshSettings()
+        {
+            _settingsInfo.text =
+                "Sound:  " + (_profile.muted ? "OFF" : "ON") + "         " +
+                "Frame rate:  " + (_profile.targetFps <= 0 ? 60 : _profile.targetFps) + " FPS\n" +
+                "Quality:  " + (_profile.quality <= 0 ? "Low" : "High");
+            if (_muteBtn != null) { var t = _muteBtn.GetComponentInChildren<Text>(); if (t != null) t.text = MuteLabel(); }
+        }
+
+        void ToggleFps()
+        {
+            _profile.targetFps = _profile.targetFps >= 60 ? 30 : 60;
+            SaveSystem.Save(_profile);
+            ApplyDisplaySettings();
+            RefreshSettings();
+        }
+
+        void ToggleQuality()
+        {
+            _profile.quality = _profile.quality <= 0 ? 1 : 0;
+            SaveSystem.Save(_profile);
+            ApplyDisplaySettings();
+            RefreshSettings();
+        }
+
+        void BuildAbout(Transform parent)
+        {
+            _about = UIFactory.Panel(parent, "AboutPanel", new Color(0.08f, 0.09f, 0.12f));
+            UIFactory.Label(_about, "ABOUT", 48, new Vector2(0, 840), new Vector2(1000, 90), _font);
+            var body = UIFactory.Label(_about,
+                "TRAIN YOUR MONSTER\n" +
+                "v" + Application.version + "\n" +
+                "com.trainyourmonster.game\n\n" +
+                "A deterministic monster-raising auto-battler.\n\n" +
+                "CREDITS\n" +
+                "Design & Code:  Lifkie Lie\n" +
+                "Engine:  Unity " + Application.unityVersion + "\n" +
+                "Battle simulation:  MTA deterministic core\n\n" +
+                "MVP soft-launch candidate.",
+                30, new Vector2(0, -20), new Vector2(1000, 1300), _font);
+            body.alignment = TextAnchor.UpperCenter;
+            UIFactory.Button(_about, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.ToSettings());
+        }
+
         void BuildPopup(Transform parent)
         {
             _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
@@ -459,8 +551,10 @@ namespace MTA.App
                 UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 14), new Vector2(400, 96), _font, () => _ctrl.StartGame());
             UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -98), new Vector2(400, 96), _font, () => _ctrl.ToProgress());
             UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -210), new Vector2(400, 96), _font, () => _ctrl.ToCollection());
-            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -322), new Vector2(400, 96), _font, ToggleMute);
+            UIFactory.Button(_menu, "SETTINGS", new Vector2(0, -322), new Vector2(400, 96), _font, () => _ctrl.ToSettings());
             UIFactory.Button(_menu, "QUIT", new Vector2(0, -434), new Vector2(400, 90), _font, Quit);
+            UIFactory.Label(_menu, "v" + Application.version, 24, new Vector2(0, -560), new Vector2(600, 44), _font)
+                .color = new Color(0.55f, 0.55f, 0.65f);
         }
 
         void BuildSelect(Transform parent, List<string> pool)

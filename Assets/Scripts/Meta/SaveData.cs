@@ -27,6 +27,8 @@ namespace MTA.Meta
         public int careerStage;      // career frontier = number of stages cleared
         public int lastClaimDay;     // daily-reward: day index of last claim (0 = never)
         public int loginStreak;      // daily-reward: consecutive-day streak
+        public int targetFps = 60;   // display: 30 or 60
+        public int quality = 1;      // display: 0 = Low, 1 = High
         public bool muted;
         public List<string> unlocked = new List<string>();
         public List<string> seen = new List<string>();

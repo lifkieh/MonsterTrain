@@ -91,6 +91,8 @@ namespace MTA.Meta
         public void ToDetail() => Flow.GoDetail();
         public void ToCareer() { _pending = null; Flow.GoCareer(); }   // -> career map
         public void ToDaily() => Flow.GoDaily();
+        public void ToSettings() => Flow.GoSettings();
+        public void ToAbout() => Flow.GoAbout();
         public void BackToMenu() => Flow.GoMainMenu();
     }
 }
