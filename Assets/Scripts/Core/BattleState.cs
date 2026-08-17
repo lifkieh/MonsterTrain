@@ -19,6 +19,9 @@ namespace MTA.Core
         public double[] cooldownReadyAt = { 0, 0, 0 };
         public bool ultimateUsed;
         public double nextActionTime;
+        // Deterministic, seed-derived per-unit tie-break key (no RNG draws).
+        // Replaces the old "team A first" bias; fair across a mirror. Set at build.
+        public ulong initiativeKey;
         public List<StatModifier> modifiers = new List<StatModifier>();
 
         public bool Alive => currentHp > 0;

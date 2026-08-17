@@ -21,8 +21,8 @@ namespace MTA.Core
             var state = new BattleState();
             var log = new List<BattleEvent>();
 
-            BuildTeam(a, 0, state.teamA, rng, cfg, registry);
-            BuildTeam(b, 1, state.teamB, rng, cfg, registry);
+            BuildTeam(a, 0, state.teamA, seed, rng, cfg, registry);
+            BuildTeam(b, 1, state.teamB, seed, rng, cfg, registry);
             log.Add(new BattleEvent { t = 0, kind = "Start",
                 extra = state.teamA.Count + "v" + state.teamB.Count + ";seed=" + seed });
 
@@ -83,7 +83,7 @@ namespace MTA.Core
         }
 
         static void BuildTeam(TeamConfig cfgTeam, int teamId, List<CombatUnit> into,
-            Random rng, BalanceConfig cfg, SpeciesRegistry registry)
+            int seed, Random rng, BalanceConfig cfg, SpeciesRegistry registry)
         {
             for (int slot = 0; slot < cfgTeam.units.Count; slot++)
             {
@@ -104,8 +104,37 @@ namespace MTA.Core
                 };
                 unit.currentHp = unit.maxHp;
                 unit.nextActionTime = StatMath.ActionInterval(unit.EffectiveStat(Stat.SPD), cfg);
+                // Fair, deterministic tie-break key: pure hash of seed+identity.
+                // Consumes NO rng, so the growth->crit->flip RNG contract is intact.
+                unit.initiativeKey = InitiativeKey(seed, teamId, slot, species.speciesId);
                 into.Add(unit);
             }
+        }
+
+        // FNV-1a 64 over (seed, team, slot, speciesId). Deterministic per seed,
+        // team-neutral in aggregate: removes the old team-A initiative bias
+        // without touching the System.Random stream.
+        static ulong InitiativeKey(int seed, int team, int slot, string speciesId)
+        {
+            const ulong offset = 14695981039346656037UL, prime = 1099511628211UL;
+            ulong h = offset;
+            h = MixInt(h, seed, prime);
+            h = MixInt(h, team, prime);
+            h = MixInt(h, slot, prime);
+            for (int i = 0; i < speciesId.Length; i++)
+            {
+                char c = speciesId[i];
+                h = (h ^ (byte)c) * prime;
+                h = (h ^ (byte)(c >> 8)) * prime;
+            }
+            return h;
+        }
+
+        static ulong MixInt(ulong h, int v, ulong prime)
+        {
+            for (int i = 0; i < 4; i++)
+                h = (h ^ (byte)(v >> (i * 8))) * prime;
+            return h;
         }
 
         static BattleResult HardResolve(BattleState s, BalanceConfig cfg, Random rng,

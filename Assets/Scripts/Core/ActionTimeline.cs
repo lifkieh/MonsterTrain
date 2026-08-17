@@ -3,7 +3,9 @@ using System.Collections.Generic;
 namespace MTA.Core
 {
     // Continuous SPD-driven timeline. Total tie ordering or determinism dies:
-    // earliest nextActionTime, then higher BASE spd, then team A, then lower slot.
+    // earliest nextActionTime, then higher BASE spd, then higher initiativeKey
+    // (seed-derived, team-neutral), then lower slot, then lower team as a
+    // hash-collision-only last resort. The old "team A first" bias is gone.
     public static class ActionTimeline
     {
         public static CombatUnit NextActor(BattleState s)
@@ -25,9 +27,11 @@ namespace MTA.Core
                 if (u.nextActionTime > best.nextActionTime) continue;
                 if (u.stats.spd > best.stats.spd) { best = u; continue; }
                 if (u.stats.spd < best.stats.spd) continue;
-                if (u.team < best.team) { best = u; continue; }
-                if (u.team > best.team) continue;
-                if (u.slot < best.slot) best = u;
+                if (u.initiativeKey > best.initiativeKey) { best = u; continue; }
+                if (u.initiativeKey < best.initiativeKey) continue;
+                if (u.slot < best.slot) { best = u; continue; }
+                if (u.slot > best.slot) continue;
+                if (u.team < best.team) best = u;   // hash-collision-only fallback
             }
         }
     }
