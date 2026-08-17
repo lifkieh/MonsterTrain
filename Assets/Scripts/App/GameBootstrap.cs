@@ -29,6 +29,9 @@ namespace MTA.App
         Text _careerHeader;
         Button _resultContinueBtn;
         List<CareerStage> _stages;
+        RectTransform _daily;
+        Text _dailyInfo, _dailyHistory;
+        Button _dailyClaimBtn;
         BalanceConfig _cfg;
         SaveData _profile;
         List<string> _roster;
@@ -79,11 +82,14 @@ namespace MTA.App
             BuildCollection(canvas.transform);
             BuildDetail(canvas.transform);
             BuildCareer(canvas.transform);
+            BuildDaily(canvas.transform);
             BuildPopup(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
             OnPhase(_ctrl.Flow.Phase);
+            // Retention: greet the player with their daily reward on launch.
+            if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
         }
 
         void OnPhase(GamePhase p)
@@ -96,7 +102,9 @@ namespace MTA.App
             _collection.gameObject.SetActive(p == GamePhase.Collection);
             _detail.gameObject.SetActive(p == GamePhase.Detail);
             _career.gameObject.SetActive(p == GamePhase.Career);
+            _daily.gameObject.SetActive(p == GamePhase.Daily);
             if (p == GamePhase.Career) RefreshCareer();
+            if (p == GamePhase.Daily) RefreshDaily();
             if (p == GamePhase.Detail) RefreshDetail();
             if (p == GamePhase.TeamSelect) RefreshSelect();
             if (p == GamePhase.Result) ShowResult();
@@ -376,6 +384,46 @@ namespace MTA.App
             }
         }
 
+        void BuildDaily(Transform parent)
+        {
+            _daily = UIFactory.Panel(parent, "DailyPanel", new Color(0.1f, 0.09f, 0.13f));
+            UIFactory.Label(_daily, "DAILY REWARD", 48, new Vector2(0, 840), new Vector2(1000, 90), _font);
+            _dailyInfo = UIFactory.Label(_daily, "", 34, new Vector2(0, 560), new Vector2(1000, 260), _font);
+            _dailyClaimBtn = UIFactory.Button(_daily, "CLAIM", new Vector2(0, 320), new Vector2(520, 130), _font, OnClaimDaily);
+            UIFactory.SetButtonColor(_dailyClaimBtn, new Color(0.2f, 0.75f, 0.35f));
+            UIFactory.Label(_daily, "History", 30, new Vector2(0, 180), new Vector2(600, 50), _font).color = new Color(0.8f, 0.8f, 0.85f);
+            _dailyHistory = UIFactory.Label(_daily, "", 26, new Vector2(0, -260), new Vector2(900, 760), _font);
+            _dailyHistory.alignment = TextAnchor.UpperCenter;
+            UIFactory.Button(_daily, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void RefreshDaily()
+        {
+            var now = System.DateTime.Now;
+            bool can = DailyRewards.CanClaim(_profile, now);
+            int preview = DailyRewards.Preview(_profile, now);
+            _dailyInfo.text = "Login streak:  " + _profile.loginStreak + " day" + (_profile.loginStreak == 1 ? "" : "s") + "\n" +
+                "Coins:  " + _profile.coins + "\n\n" +
+                (can ? "Today's reward:  +" + preview + " coins" : "Claimed today — come back tomorrow!");
+            _dailyClaimBtn.interactable = can;
+            var h = _profile.rewardHistory;
+            string s = "";
+            for (int i = h.Count - 1; i >= 0 && i >= h.Count - 12; i--) s += h[i] + "\n";
+            _dailyHistory.text = s.Length == 0 ? "(no claims yet)" : s;
+        }
+
+        void OnClaimDaily()
+        {
+            var r = DailyRewards.Claim(_profile, System.DateTime.Now);
+            if (r.claimed)
+            {
+                SaveSystem.Save(_profile);
+                ShowPopup("DAILY REWARD", "Day " + r.streak + " streak!\n+" + r.coins + " coins" +
+                    (r.streakReset ? "\n(streak restarted)" : ""));
+            }
+            RefreshDaily();
+        }
+
         void BuildPopup(Transform parent)
         {
             _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
@@ -402,16 +450,17 @@ namespace MTA.App
         void BuildMenu(Transform parent)
         {
             _menu = UIFactory.Panel(parent, "MenuPanel", new Color(0.08f, 0.09f, 0.12f));
-            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 470), new Vector2(1000, 100), _font);
-            UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 392), new Vector2(1000, 60), _font);
-            UIFactory.Button(_menu, "PLAY", new Vector2(0, 300), new Vector2(400, 100), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "CAREER", new Vector2(0, 180), new Vector2(400, 100), _font, () => _ctrl.ToCareer());
+            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 540), new Vector2(1000, 100), _font);
+            UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 462), new Vector2(1000, 60), _font);
+            UIFactory.Button(_menu, "PLAY", new Vector2(0, 350), new Vector2(400, 96), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "CAREER", new Vector2(0, 238), new Vector2(400, 96), _font, () => _ctrl.ToCareer());
+            UIFactory.Button(_menu, "DAILY", new Vector2(0, 126), new Vector2(400, 96), _font, () => _ctrl.ToDaily());
             if (_hadSave)
-                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 60), new Vector2(400, 100), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -60), new Vector2(400, 100), _font, () => _ctrl.ToProgress());
-            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -180), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
-            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -300), new Vector2(400, 100), _font, ToggleMute);
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -420), new Vector2(400, 90), _font, Quit);
+                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 14), new Vector2(400, 96), _font, () => _ctrl.StartGame());
+            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -98), new Vector2(400, 96), _font, () => _ctrl.ToProgress());
+            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -210), new Vector2(400, 96), _font, () => _ctrl.ToCollection());
+            _muteBtn = UIFactory.Button(_menu, MuteLabel(), new Vector2(0, -322), new Vector2(400, 96), _font, ToggleMute);
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -434), new Vector2(400, 90), _font, Quit);
         }
 
         void BuildSelect(Transform parent, List<string> pool)

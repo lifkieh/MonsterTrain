@@ -90,6 +90,7 @@ namespace MTA.Meta
         public void ToCollection() => Flow.GoCollection();
         public void ToDetail() => Flow.GoDetail();
         public void ToCareer() { _pending = null; Flow.GoCareer(); }   // -> career map
+        public void ToDaily() => Flow.GoDaily();
         public void BackToMenu() => Flow.GoMainMenu();
     }
 }

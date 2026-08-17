@@ -25,9 +25,12 @@ namespace MTA.Meta
         public int battlesPlayed;
         public int battlesWon;
         public int careerStage;      // career frontier = number of stages cleared
+        public int lastClaimDay;     // daily-reward: day index of last claim (0 = never)
+        public int loginStreak;      // daily-reward: consecutive-day streak
         public bool muted;
         public List<string> unlocked = new List<string>();
         public List<string> seen = new List<string>();
+        public List<string> rewardHistory = new List<string>();
         public List<MonsterSave> collection = new List<MonsterSave>();
         public string lastSaveUtc = "";
 

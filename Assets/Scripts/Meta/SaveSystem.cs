@@ -21,6 +21,7 @@ namespace MTA.Meta
                 if (d == null) return null;
                 if (d.unlocked == null) d.unlocked = new System.Collections.Generic.List<string>();
                 if (d.seen == null) d.seen = new System.Collections.Generic.List<string>();
+                if (d.rewardHistory == null) d.rewardHistory = new System.Collections.Generic.List<string>();
                 if (d.collection == null) d.collection = new System.Collections.Generic.List<MonsterSave>();
                 Migrate(d);
                 return d;

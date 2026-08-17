@@ -1,7 +1,7 @@
 namespace MTA.Meta
 {
     // First-playable screen states. Pure C#: no UnityEngine, edit-mode testable.
-    public enum GamePhase { MainMenu, TeamSelect, Battle, Result, Progress, Collection, Detail, Career }
+    public enum GamePhase { MainMenu, TeamSelect, Battle, Result, Progress, Collection, Detail, Career, Daily }
 
     // Minimal state machine driving the playable loop:
     // MainMenu -> TeamSelect -> Battle -> Result -> (TeamSelect | MainMenu).
@@ -18,6 +18,7 @@ namespace MTA.Meta
         public void GoCollection() => Set(GamePhase.Collection);
         public void GoDetail()     => Set(GamePhase.Detail);
         public void GoCareer()     => Set(GamePhase.Career);
+        public void GoDaily()      => Set(GamePhase.Daily);
 
         void Set(GamePhase p)
         {
