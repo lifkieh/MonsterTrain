@@ -33,7 +33,7 @@ namespace MTA.Battle
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
-        RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
+        RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena; VfxPool _vfx;
         readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
@@ -82,6 +82,7 @@ namespace MTA.Battle
             _arena = new BattleArena(); _arena.Build(_stage, arenaElem);   // procedural element arena
             _texts = new FloatingTextPool(_stage, _font);
             _fx = new BattleFx(_stage);
+            _vfx = new VfxPool(_stage, 12);   // real CC0 impact VFX
 
             // Full-screen crit/ultimate flash overlay (over the fighters).
             var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(Image));
@@ -286,6 +287,13 @@ namespace MTA.Battle
                         _texts.Spawn(av.BasePos + new Vector2(0, 62), SpeciesIdentity.SkillWord(actorSp), COrange, 26);
                         _fx.Burst(av.BasePos, BurstKind.Ultimate);
                     }
+                    // Elemental cast VFX on skills/ultimates.
+                    if (av != null && (e.kind == ReplayEventKind.Skill || ult))
+                    {
+                        string ael = elementNames != null && elementNames.TryGetValue(actorSp, out var ae) ? ae : "";
+                        string efx = ael == "Fire" ? "fire" : ael == "Water" ? "electric" : "";
+                        if (efx != "") _vfx.Play(efx, av.BasePos + new Vector2(0, 10), ult ? 260f : 190f, Color.white);
+                    }
                     if (e.kind == ReplayEventKind.Skill) AudioManager.Play(Sfx.Skill);
                     else if (ult) AudioManager.Play(Sfx.Ultimate);
 
@@ -324,7 +332,7 @@ namespace MTA.Battle
                 {
                     Vector2 knock = new Vector2(e.targetTeam == 0 ? -1f : 1f, 0f);   // away from enemy
                     var dv = View(e.targetTeam, e.targetSlot);
-                    if (dv != null) { dv.Knock(knock, b.knockback); if (b.launch) dv.Launch(140f); dv.PlayDeath(knock); }
+                    if (dv != null) { dv.Knock(knock, b.knockback); if (b.launch) dv.Launch(140f); dv.PlayDeath(knock); _vfx.Play("explosion", dv.BasePos, b.endsBattle ? 340f : 240f, Color.white); }
                     if (b.endsBattle)
                     {
                         _texts.Spawn(ActiveAnchor(1 - e.targetTeam) + new Vector2(0, 150), FinisherWord(b.finisher), CCrit, 40);
@@ -352,9 +360,11 @@ namespace MTA.Battle
             if (b.dodge && target != null)
             {
                 float sp0 = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
+                Afterimage(target);                                    // sidestep afterimage
                 target.Dodge(new Vector2(-dir.x, 0.3f));
-                _texts.Spawn(target.BasePos + new Vector2(0, 72), "DODGE", CDodge, 26);
-                AudioManager.Play(Sfx.Click);
+                _texts.Spawn(target.BasePos + new Vector2(0, 78), "MISS", CDodge, 34);
+                _vfx.Play("puff", target.BasePos, 150f, new Color(1f, 1f, 1f, 0.9f));
+                AudioManager.Play(Sfx.Hover);                          // dodge whoosh
                 HitStop(0.16f / sp0 + 0.02f);   // keep the sim frozen through the dodge beat
                 yield return new WaitForSecondsRealtime(0.16f / sp0);
             }
@@ -376,6 +386,7 @@ namespace MTA.Battle
                 AudioManager.Play((b.crit || ult) && last ? Sfx.Crit : Sfx.Hit);
                 if (!last)
                 {
+                    _vfx.Play("hit_small", tpos + ComboJit(i), 130f, Color.white);
                     Shake(ult ? 5f : 2.5f);
                     HitStop(step + 0.02f);                                    // hold the sim clock across the whole combo
                 }
@@ -388,6 +399,8 @@ namespace MTA.Battle
                     HitStop(impact / sp);
                     Shake(ult ? 22f : b.crit ? 15f : 8f);
                     ZoomPunch(ult ? 0.12f : b.crit ? 0.07f : 0.03f);
+                    _vfx.Play(ult ? "explosion" : b.crit ? "hit_big" : "hit_impact", tpos,
+                        ult ? 320f : b.crit ? 240f : 180f, Color.white);
                     if (b.crit || ult) StartCoroutine(Shockwave(tpos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
                 }
                 yield return new WaitForSecondsRealtime(step);
@@ -436,6 +449,22 @@ namespace MTA.Battle
         static Vector2 ComboJit(int i) => new Vector2(UnityEngine.Random.Range(-40f, 40f), UnityEngine.Random.Range(-30f, 40f));
 
         void FlashScreen(float amt) => _flashT = Mathf.Max(_flashT, amt);
+
+        // Sidestep afterimage: a fading ghost silhouette left where the dodger stood.
+        void Afterimage(UnitView u)
+        {
+            if (u != null) StartCoroutine(AfterimageRoutine(u.BasePos));
+        }
+        IEnumerator AfterimageRoutine(Vector2 pos)
+        {
+            var go = new GameObject("After", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_stage, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.anchoredPosition = pos; rt.sizeDelta = new Vector2(150, 185);
+            var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Disc(); img.raycastTarget = false;
+            float t = 0f;
+            while (t < 1f) { t += Time.deltaTime / 0.28f; img.color = new Color(0.55f, 0.82f, 1f, (1f - t) * 0.5f); yield return null; }
+            Destroy(go);
+        }
 
         IEnumerator Shockwave(Vector2 pos, Color col)
         {

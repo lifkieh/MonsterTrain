@@ -19,18 +19,35 @@ namespace MTA.Battle
             _root = Panel(parent, "Arena", skyTop, new Vector2(1200, 1700), Vector2.zero);
             _root.SetAsFirstSibling();
 
-            const int bands = 12;
-            for (int i = 0; i < bands; i++)
+            // Real CC0 forest panorama backdrop, tinted per element; procedural fallback.
+            var backdrop = Resources.Load<Texture2D>("Arena/forest");
+            if (backdrop != null)
             {
-                float f = i / (float)(bands - 1);
-                Panel(_root, "Sky", Color.Lerp(skyTop, skyHor, f), new Vector2(1200, 165), new Vector2(0, 780 - i * 145));
+                var go = new GameObject("Backdrop", typeof(RectTransform), typeof(RawImage));
+                var rt = go.GetComponent<RectTransform>(); rt.SetParent(_root, false);
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(1320, 1240); rt.anchoredPosition = new Vector2(0, 200);
+                var img = go.GetComponent<RawImage>(); img.texture = backdrop; img.raycastTarget = false;
+                img.uvRect = new Rect(0.12f, 0f, 0.42f, 1f);   // frame a slice of the panorama
+                img.color = element == "Fire" ? new Color(1f, 0.72f, 0.55f)
+                          : element == "Water" ? new Color(0.7f, 0.85f, 1.05f)
+                          : element == "Nature" ? new Color(1f, 1f, 1f)
+                          : new Color(0.85f, 0.8f, 0.95f);
             }
-
-            _far = Layer("Far");
-            var mtn = new Color(mtnCol.r, mtnCol.g, mtnCol.b, 0.9f);
-            float[] mx = { -430, -210, 40, 250, 470 };
-            float[] ms = { 360, 520, 430, 600, 380 };
-            for (int i = 0; i < mx.Length; i++) Diamond(_far, mtn, ms[i], new Vector2(mx[i], -430));
+            else
+            {
+                const int bands = 12;
+                for (int i = 0; i < bands; i++)
+                {
+                    float f = i / (float)(bands - 1);
+                    Panel(_root, "Sky", Color.Lerp(skyTop, skyHor, f), new Vector2(1200, 165), new Vector2(0, 780 - i * 145));
+                }
+                _far = Layer("Far");
+                var mtn = new Color(mtnCol.r, mtnCol.g, mtnCol.b, 0.9f);
+                float[] mx = { -430, -210, 40, 250, 470 };
+                float[] ms = { 360, 520, 430, 600, 380 };
+                for (int i = 0; i < mx.Length; i++) Diamond(_far, mtn, ms[i], new Vector2(mx[i], -430));
+            }
 
             _near = Layer("Near");
             var pil = new Color(floorCol.r * 0.6f, floorCol.g * 0.6f, floorCol.b * 0.6f, 0.95f);
@@ -55,7 +72,8 @@ namespace MTA.Battle
                 _vel[i] = new Vector2(((float)seed.NextDouble() - 0.5f) * 22f, partDir * (10f + (float)seed.NextDouble() * 26f));
             }
 
-            _farHome = _far.anchoredPosition; _nearHome = _near.anchoredPosition;
+            _farHome = _far != null ? _far.anchoredPosition : Vector2.zero;
+            _nearHome = _near != null ? _near.anchoredPosition : Vector2.zero;
         }
 
         static void Theme(string e, out Color skyTop, out Color skyHor, out Color mtn, out Color ground, out Color floor, out Color part, out float partDir)

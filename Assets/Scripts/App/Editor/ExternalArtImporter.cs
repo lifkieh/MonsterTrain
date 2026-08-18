@@ -33,20 +33,32 @@ namespace MTA.App.EditorTools
         }
     }
 
-    // Auto-applies the same settings to any future MonSprites import.
-    public class MonSpritePostprocessor : AssetPostprocessor
+    // Auto-applies import settings to downloaded art.
+    public class ArtPostprocessor : AssetPostprocessor
     {
         void OnPreprocessTexture()
         {
-            if (!assetPath.Replace('\\', '/').Contains("/Resources/MonSprites/")) return;
-            var ti = (TextureImporter)assetImporter;
-            ti.textureType = TextureImporterType.Sprite;
-            ti.spriteImportMode = SpriteImportMode.Single;
-            ti.filterMode = FilterMode.Point;
-            ti.mipmapEnabled = false;
-            ti.textureCompression = TextureImporterCompression.Uncompressed;
-            ti.spritePixelsPerUnit = 64;
-            ti.alphaIsTransparency = true;
+            var p = assetPath.Replace('\\', '/');
+            if (p.Contains("/Resources/MonSprites/"))
+            {
+                var ti = (TextureImporter)assetImporter;
+                ti.textureType = TextureImporterType.Sprite;
+                ti.spriteImportMode = SpriteImportMode.Single;
+                ti.filterMode = FilterMode.Point;
+                ti.mipmapEnabled = false;
+                ti.textureCompression = TextureImporterCompression.Uncompressed;
+                ti.spritePixelsPerUnit = 64;
+                ti.alphaIsTransparency = true;
+            }
+            else if (p.Contains("/Resources/Vfx/") || p.Contains("/Resources/Arena/"))
+            {
+                var ti = (TextureImporter)assetImporter;   // RawImage textures: no mipmap, clamp
+                ti.textureType = TextureImporterType.Default;
+                ti.mipmapEnabled = false;
+                ti.wrapMode = TextureWrapMode.Clamp;
+                ti.filterMode = FilterMode.Bilinear;
+                ti.alphaIsTransparency = true;
+            }
         }
     }
 }
