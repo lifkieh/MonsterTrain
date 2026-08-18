@@ -47,6 +47,11 @@ namespace MTA.Battle
         double _lastClashT = -1;
         const float CHARGE_DUR = 1.15f;      // opening sprint-to-centre duration
         const float CHARGE_CONTACT = 0.62f;  // when the two charges collide
+
+        // --- Phase O fight feel: afterimage pool (×6 units) + impact frames ---
+        const int GHOST_POOL = 16;
+        Image[] _ghost; float[] _ghostA; int _ghostCur;
+        Image _impactOverlay, _impactSil;
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
@@ -131,12 +136,36 @@ namespace MTA.Battle
             _fx = new BattleFx(_stage);
             _vfx = new VfxPool(_stage, 24);   // ×6 units — pre-warmed real CC0 impact VFX
 
+            // Afterimage ghost pool — pre-warmed, sized for six concurrent units (behind fighters).
+            _ghost = new Image[GHOST_POOL]; _ghostA = new float[GHOST_POOL]; _ghostCur = 0;
+            for (int i = 0; i < GHOST_POOL; i++)
+            {
+                var gg = new GameObject("Ghost", typeof(RectTransform), typeof(Image));
+                var grt = gg.GetComponent<RectTransform>(); grt.SetParent(_stage, false);
+                grt.anchorMin = grt.anchorMax = new Vector2(0.5f, 0.5f); grt.sizeDelta = new Vector2(256, 256);
+                var gi = gg.GetComponent<Image>(); gi.raycastTarget = false; gi.preserveAspect = true; gi.color = new Color(1, 1, 1, 0);
+                gg.SetActive(false); _ghost[i] = gi; _ghostA[i] = 0f;
+            }
+
             // Full-screen crit/ultimate flash overlay (over the fighters).
             var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(Image));
             var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(_root, false);
             frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.sizeDelta = new Vector2(1400, 2000); frt.anchoredPosition = Vector2.zero;
             _screenFlash = flashGo.GetComponent<Image>(); _screenFlash.color = new Color(1, 1, 1, 0); _screenFlash.raycastTarget = false;
             _flashT = 0f;
+
+            // Impact-frame overlays (ult/finisher only): near-black darken + a white victim
+            // silhouette copy that renders ABOVE the darken so the victim pops.
+            var ovGo = new GameObject("ImpactDark", typeof(RectTransform), typeof(Image));
+            var ovrt = ovGo.GetComponent<RectTransform>(); ovrt.SetParent(_root, false);
+            ovrt.anchorMin = Vector2.zero; ovrt.anchorMax = Vector2.one; ovrt.sizeDelta = new Vector2(1400, 2000); ovrt.anchoredPosition = Vector2.zero;
+            _impactOverlay = ovGo.GetComponent<Image>(); _impactOverlay.color = new Color(0.02f, 0.02f, 0.04f, 0f); _impactOverlay.raycastTarget = false;
+            var silGo = new GameObject("ImpactSil", typeof(RectTransform), typeof(Image));
+            var silrt = silGo.GetComponent<RectTransform>(); silrt.SetParent(_root, false);
+            silrt.anchorMin = silrt.anchorMax = new Vector2(0.5f, 0.5f); silrt.sizeDelta = new Vector2(256, 256);
+            _impactSil = silGo.GetComponent<Image>(); _impactSil.raycastTarget = false; _impactSil.preserveAspect = true; _impactSil.color = new Color(1, 1, 1, 0);
+            silGo.SetActive(false);
+
             _views.Clear(); _styleByKey.Clear(); _speciesByKey.Clear();
 
             var size = new Vector2(256, 386);
@@ -369,9 +398,10 @@ namespace MTA.Battle
                     {
                         _texts.Spawn(Formation(1 - e.targetTeam, 0) + new Vector2(0, 200), FinisherWord(b.finisher), CCrit, 40);
                         ApplyCam(ChoreoCam.SlowMoFinisher);
+                        if (dv != null) StartCoroutine(ImpactFrame(dv));   // finisher impact frame
                     }
                     else ApplyCam(ChoreoCam.ShakeCrit);
-                    HitStop(b.hitStop);
+                    HitStop(b.endsBattle ? 0.15f : 0.10f);   // KO freeze (tiered; heavy only)
                     AudioManager.Play(Sfx.Death);
                     break;
                 }
@@ -415,56 +445,69 @@ namespace MTA.Battle
                 float gap = Mathf.Abs(T.BasePos.x - A.BasePos.x);
                 Vector2 close = new Vector2(dir.x * (gap - 150f), (as_ - 1) * 30f);   // side-offset by slot
 
-                // 1) DASH IN
+                Color gtint = elementColors != null && elementColors.TryGetValue(actorSp, out var gec) ? gec : Color.white;
+
+                // 1) ANTICIPATION + DASH IN (squash-crouch, dash with afterimages, land overshoot)
+                A.Squash(1.10f, 0.85f, 0.07f);
+                yield return new WaitForSecondsRealtime(0.05f / sp);
                 _vfx.Play("speedlines", A.BasePos + dir * 40f, 210f, new Color(1f, 1f, 1f, 0.9f));
-                yield return MoveOffset(A, Vector2.zero, close, 0.10f / sp);
+                yield return MoveOffset(A, Vector2.zero, close, 0.10f / sp, true, gtint);
+                A.Squash(0.9f, 1.12f, 0.06f);
                 Shake(4f);
 
-                // 2) GROUND COMBO
+                // 2) GROUND COMBO (light — flash + squash + vibrate, NO global freeze)
                 int ground = Mathf.Max(2, n / 3);
                 for (int i = 0; i < ground; i++)
                 {
                     A.PlayAttack(dir, 34f, false); T.PlayHit(false);
                     T.combatOffset = new Vector2(dir.x * 10f, 0f);
+                    T.Squash(1.2f, 0.8f, 0.08f); T.Vibrate(2.5f, 0.05f);
                     _vfx.Play("hit_small", T.BasePos + ComboJit(i), 130f, Color.white);
                     _fx.Burst(T.BasePos + ComboJit(i), BurstKind.Slash);
                     Shake(4f); AudioManager.Play(Sfx.Hit);
-                    HitStop(0.03f);
                     yield return new WaitForSecondsRealtime(0.05f / sp);
                 }
 
-                // 3) LAUNCHER — target flies up, attacker jumps after
+                // 3) LAUNCHER — target spins up, attacker jumps after (heavy → capped freeze)
                 AudioManager.Play(Sfx.Crit);
                 _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
                 _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
-                StartCoroutine(MoveOffset(T, T.combatOffset, new Vector2(dir.x * 24f, 300f), 0.16f / sp));
-                yield return MoveOffset(A, close, close + new Vector2(dir.x * 60f, 260f), 0.16f / sp);
+                T.Spin(720f, 0.55f); T.Squash(1.25f, 0.78f, 0.09f); T.Vibrate(3f, 0.09f); HitStop(0.09f);
+                StartCoroutine(MoveOffset(T, T.combatOffset, new Vector2(dir.x * 24f, 300f), 0.16f / sp, true, gtint));
+                yield return MoveOffset(A, close, close + new Vector2(dir.x * 60f, 260f), 0.16f / sp, true, gtint);
                 ApplyCam(ChoreoCam.ZoomCombo);
 
-                // 4) AIR COMBO
+                // 4) AIR COMBO (juggle — afterimages, small squash, no freeze)
                 int air = Mathf.Max(2, n - ground - 1);
                 for (int i = 0; i < air; i++)
                 {
                     A.PlayAttack(dir, 26f, ult && i == air - 1); T.PlayHit(true);
                     T.combatOffset += new Vector2(dir.x * 6f, 14f);
                     A.combatOffset = new Vector2(A.combatOffset.x, T.combatOffset.y - 20f);
+                    T.Squash(1.15f, 0.86f, 0.05f); SpawnGhost(T, gtint); SpawnGhost(A, gtint);
                     _vfx.Play("hit_impact", T.BasePos, 150f, Color.white);
                     Shake(6f); AudioManager.Play(Sfx.Hit);
                     yield return new WaitForSecondsRealtime(0.045f / sp);
                 }
 
-                // 5) SLAM DOWN
+                // 5) SLAM DOWN (spike — spin down, tiered freeze, impact frame on ultimate)
                 AudioManager.Play(ult ? Sfx.Ultimate : Sfx.Crit);
                 _texts.Spawn(T.BasePos + new Vector2(0, 34), "SLAM!", COrange, 32);
-                yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp);
+                T.Spin(900f, 0.16f);
+                yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
                 _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), CCrit, 46);
                 if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
-                T.Knock(dir, b.knockback);
+                T.Knock(dir, b.knockback); T.Squash(1.35f, 0.68f, 0.1f); T.Vibrate(3f, ult ? 0.15f : 0.09f);
                 Shake(ult ? 24f : 18f); FlashScreen(ult ? 0.7f : 0.5f); ZoomPunch(ult ? 0.12f : 0.08f);
                 StartCoroutine(Shockwave(T.BasePos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
-                HitStop(ult ? 0.10f : 0.08f);
+                if (ult) StartCoroutine(ImpactFrame(T));   // impact frame only on ultimates (+ finisher)
+                HitStop(ult ? 0.15f : 0.09f);
                 yield return new WaitForSecondsRealtime(0.1f / sp);
+
+                // 5b) GROUND BOUNCE ×2 with dust
+                yield return Bounce(T, dir, 0.5f, sp);
+                yield return Bounce(T, dir, 0.25f, sp);
 
                 // 6) RECOVERY — both return to formation
                 StartCoroutine(MoveOffset(T, T.combatOffset, Vector2.zero, 0.2f / sp));
@@ -501,11 +544,12 @@ namespace MTA.Battle
                     A.PlayAttack(dir, 30f, false); T.PlayHit(b.crit && last);
                     _vfx.Play(last && b.crit ? "hit_impact" : "hit_small", T.BasePos + ComboJit(i), last ? 150f : 120f, Color.white);
                     AudioManager.Play(b.crit && last ? Sfx.Crit : Sfx.Hit);
+                    T.Squash(1.2f, 0.8f, 0.08f);
                     if (last)
                     {
                         _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), b.crit ? CCrit : CWhite, b.crit ? 38 : 30);
                         T.Knock(dir, b.knockback);
-                        if (b.crit) { Shake(8f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
+                        if (b.crit) { T.Vibrate(2.5f, 0.06f); Shake(8f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
                     }
                     yield return new WaitForSecondsRealtime(0.05f / sp);
                 }
@@ -528,7 +572,7 @@ namespace MTA.Battle
             {
                 T.PlayHit(b.crit);
                 _vfx.Play(b.crit ? "hit_impact" : "hit_small", T.BasePos, 150f, Color.white);
-                T.Knock(dir, b.knockback * 0.6f);
+                T.Knock(dir, b.knockback * 0.6f); T.Squash(1.2f, 0.8f, 0.08f); if (b.crit) T.Vibrate(2.5f, 0.06f);
                 _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), b.crit ? CCrit : CWhite, b.crit ? 36 : 28);
             }
             AudioManager.Play(b.crit ? Sfx.Crit : Sfx.Hit);
@@ -549,12 +593,13 @@ namespace MTA.Battle
                 _vfx.Play(last ? (ult ? "explosion" : b.crit ? "hit_big" : "hit_impact") : "hit_small",
                     tp, last ? (ult ? 300f : 180f) : 120f, Color.white);
                 AudioManager.Play((b.crit || ult) && last ? Sfx.Crit : Sfx.Hit);
+                if (T != null) T.Squash(big ? 1.3f : 1.15f, big ? 0.72f : 0.85f, 0.08f);
                 if (last)
                 {
                     _texts.Spawn(tp + Jitter(), b.amount.ToString(), (b.crit || ult) ? CCrit : CWhite, (b.crit || ult) ? 44 : 30);
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); }
-                    if (big) { Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); HitStop(0.08f); }
-                    else if (b.crit) { Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.05f); }
+                    if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); HitStop(0.15f); }
+                    else if (b.crit) { T?.Vibrate(2.5f, 0.09f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
                 }
                 yield return new WaitForSecondsRealtime(0.05f / sp);
             }
@@ -562,18 +607,89 @@ namespace MTA.Battle
 
         // Lerp a fighter's combat offset (ease-out). Realtime — the sim clock keeps
         // advancing during movement so concurrent choreographies overlap (no stall).
-        IEnumerator MoveOffset(UnitView u, Vector2 from, Vector2 to, float dur)
+        IEnumerator MoveOffset(UnitView u, Vector2 from, Vector2 to, float dur, bool ghost = false, Color ghostTint = default)
         {
             if (u == null) yield break;
-            float t = 0f;
+            float t = 0f, gAcc = 0f;
             while (t < 1f)
             {
                 t += Time.deltaTime / Mathf.Max(0.01f, dur);
                 float e = 1f - (1f - Mathf.Clamp01(t)) * (1f - Mathf.Clamp01(t));
                 u.combatOffset = Vector2.Lerp(from, to, e);
+                if (ghost) { gAcc += Time.deltaTime; if (gAcc >= 0.035f) { gAcc = 0f; SpawnGhost(u, ghostTint); } }
                 yield return null;
             }
             u.combatOffset = to;
+        }
+
+        // Pooled afterimage: a fading copy of the unit's current sprite, tinted.
+        void SpawnGhost(UnitView u, Color tint)
+        {
+            if (_ghost == null || u == null) return;
+            var sp = u.CurrentSprite; if (sp == null) return;
+            if (tint.a <= 0f && tint.r <= 0f && tint.g <= 0f && tint.b <= 0f) tint = Color.white;
+            var g = _ghost[_ghostCur]; _ghostA[_ghostCur] = 1f; _ghostCur = (_ghostCur + 1) % _ghost.Length;
+            g.sprite = sp;
+            var rt = g.rectTransform;
+            rt.anchoredPosition = u.RenderPos;
+            float s = u.RenderScale;
+            rt.localScale = new Vector3(u.Mirror * s, s, 1f);
+            g.color = new Color(tint.r, tint.g, tint.b, 0.5f);
+            g.gameObject.SetActive(true);
+        }
+
+        void UpdateGhosts()
+        {
+            if (_ghost == null) return;
+            float dt = Time.deltaTime;
+            for (int i = 0; i < _ghost.Length; i++)
+            {
+                if (_ghostA[i] <= 0f) continue;
+                _ghostA[i] -= dt / 0.2f;
+                if (_ghostA[i] <= 0f) { _ghost[i].gameObject.SetActive(false); continue; }
+                var c = _ghost[i].color; _ghost[i].color = new Color(c.r, c.g, c.b, _ghostA[i] * 0.5f);
+            }
+        }
+
+        // Anime impact frame (ultimate / finisher only): ~2 frames of high contrast — the
+        // victim silhouette flashed white above a near-black darken. finally-restored so an
+        // exception can never leave the screen black.
+        IEnumerator ImpactFrame(UnitView victim)
+        {
+            if (_impactOverlay == null || _impactSil == null || victim == null) yield break;
+            try
+            {
+                victim.ImpactSilhouette(0.08f);
+                var sp = victim.CurrentSprite;
+                if (sp != null)
+                {
+                    _impactSil.sprite = sp;
+                    var rt = _impactSil.rectTransform;
+                    rt.anchoredPosition = _stage.anchoredPosition + victim.RenderPos * _zoom;
+                    float s = victim.RenderScale * _zoom;
+                    rt.localScale = new Vector3(victim.Mirror * s, s, 1f);
+                    _impactSil.color = Color.white;
+                    _impactSil.gameObject.SetActive(true);
+                }
+                _impactOverlay.color = new Color(0.02f, 0.02f, 0.04f, 0.85f);
+                yield return new WaitForSecondsRealtime(0.05f);
+            }
+            finally
+            {
+                _impactOverlay.color = new Color(0.02f, 0.02f, 0.04f, 0f);
+                if (_impactSil != null) _impactSil.gameObject.SetActive(false);
+            }
+        }
+
+        // Ground bounce after a slam: a small parabolic hop + dust puff + squash on landing.
+        IEnumerator Bounce(UnitView u, Vector2 dir, float h, float sp)
+        {
+            if (u == null) yield break;
+            Vector2 ground = new Vector2(u.combatOffset.x, 0f);
+            yield return MoveOffset(u, u.combatOffset, ground + new Vector2(dir.x * 8f, 150f * h), 0.09f / sp);
+            yield return MoveOffset(u, u.combatOffset, ground, 0.09f / sp);
+            _vfx.Play("puff", u.BasePos + new Vector2(0, -40), 120f + 90f * h, new Color(1f, 1f, 1f, 0.6f));
+            u.Squash(1.25f, 0.78f, 0.07f);
         }
 
         // ---- Tawuran engagement: every frame push each unit's BasePos toward its live
@@ -846,6 +962,7 @@ namespace MTA.Battle
         void UpdateCamera()
         {
             if (_stage == null) return;
+            UpdateGhosts();
             Vector2 camOffset = _stage.anchoredPosition;
             if (_shakeT > 0f)
             {

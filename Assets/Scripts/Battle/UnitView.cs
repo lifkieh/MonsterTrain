@@ -23,6 +23,14 @@ namespace MTA.Battle
         Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic push + reserve staging
         public Vector2 combatOffset;    // view-driven fight choreography (dash / launch / slam)
 
+        // --- Phase O deform layer (applied to the ART child only, independent of
+        // combatOffset / choreography math): squash & stretch, lean/spin, vibrate. ---
+        Vector2 _lastPos; Vector2 _vel;
+        Vector2 _sqCur = Vector2.one; float _sqT, _sqDur;   // explicit squash impulse (eases back to 1)
+        float _spinT, _spinSpeed, _spinAngle;               // launcher/slam spin + lean settle
+        float _vibT, _vibMag;                               // hit-stop vibrate
+        float _impSilT;                                     // impact-frame white silhouette
+
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
 
@@ -107,6 +115,7 @@ namespace MTA.Battle
             _name = MakeText(nprt, font, displayName, 20, Vector2.zero, TextAnchor.MiddleCenter);
             _name.fontStyle = FontStyle.Bold;
 
+            _lastPos = anchoredPos;
             _spawnT = 0f;   // spawn-pop
         }
 
@@ -147,6 +156,38 @@ namespace MTA.Battle
         public void SetBasePos(Vector2 p) { _basePos = p; }
         public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse
 
+        // --- Phase O deform hooks (visual only) ---
+        public void Squash(float sx, float sy, float dur) { if (_dead) return; _sqCur = new Vector2(sx, sy); _sqT = _sqDur = Mathf.Max(0.01f, dur); }
+        public void Spin(float degPerSec, float dur) { if (_dead) return; _spinSpeed = degPerSec; _spinT = Mathf.Max(_spinT, dur); }
+        public void Vibrate(float mag, float dur) { if (_dead) return; _vibMag = Mathf.Max(_vibMag, mag); _vibT = Mathf.Max(_vibT, dur); }
+        public void ImpactSilhouette(float dur) { _impSilT = Mathf.Max(0.01f, dur); }
+        public Sprite CurrentSprite => _sprite != null ? _sprite.sprite : null;
+        public Vector2 RenderPos => _rt != null ? _rt.anchoredPosition : _basePos;
+        public float RenderScale => _rt != null ? _rt.localScale.x : 1f;
+        public int Mirror => _mirror;
+
+        // Deform layer on the ART child: explicit squash impulse × velocity stretch,
+        // launcher/slam spin or velocity lean, and hit-stop vibrate. Kept off _rt so the
+        // choreography position math (combatOffset / BasePos) is never touched.
+        void ApplyDeform(float dt)
+        {
+            if (_artRt == null) return;
+            Vector2 sq = Vector2.one;
+            if (_sqT > 0f) { _sqT -= dt; float e = Mathf.Clamp01(_sqT / _sqDur); sq = Vector2.Lerp(Vector2.one, _sqCur, e); }
+            float ax = Mathf.Clamp(Mathf.Abs(_vel.x) * 0.00035f, 0f, 0.16f);   // stretch along motion
+            float ay = Mathf.Clamp(Mathf.Abs(_vel.y) * 0.00035f, 0f, 0.16f);
+            float scx = sq.x * (1f + ax - ay * 0.5f);
+            float scy = sq.y * (1f + ay - ax * 0.5f);
+            float rot;
+            if (_spinT > 0f) { _spinT -= dt; _spinAngle += _spinSpeed * dt; rot = _spinAngle; }
+            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f, -12f, 12f) * _mirror; }
+            Vector2 vib = Vector2.zero;
+            if (_vibT > 0f) { _vibT -= dt; float tt = Time.time; vib = new Vector2(Mathf.Sin(tt * 90f) * _vibMag, Mathf.Cos(tt * 78f) * _vibMag * 0.5f); }
+            _artRt.localScale = new Vector3(_mirror * scx, scy, 1f);
+            _artRt.localRotation = Quaternion.Euler(0f, 0f, rot);
+            _artRt.anchoredPosition = vib;
+        }
+
         void Update()
         {
             if (_rt == null) return;
@@ -160,8 +201,9 @@ namespace MTA.Battle
             if (_spawnT < 1f) _spawnT = Mathf.Min(1f, _spawnT + dt / 0.3f);
             float spawnScale = Mathf.SmoothStep(0.2f, 1f, _spawnT) * _reserveScale;
 
-            // Cinematic impulse (knockback / launch / slide-in) decays toward rest.
-            _impulse = Vector2.Lerp(_impulse, Vector2.zero, 7f * dt);
+            // Cinematic impulse (knockback / launch / slide-in) — slower ease-out (~0.25 s)
+            // so victim knockback reads heavy; the engagement system re-closes the gap.
+            _impulse = Vector2.Lerp(_impulse, Vector2.zero, 4.5f * dt);
             if (_impulse.sqrMagnitude < 0.25f) _impulse = Vector2.zero;
 
             if (_dead)
@@ -172,6 +214,7 @@ namespace MTA.Battle
                 _rt.anchoredPosition = pos;
                 _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
                 _rt.localRotation = Quaternion.Euler(0, 0, (_knock.x >= 0f ? 1f : -1f) * 210f * p);   // launched spin
+                if (_artRt != null) { _artRt.localScale = new Vector3(_mirror, 1f, 1f); _artRt.localRotation = Quaternion.identity; _artRt.anchoredPosition = Vector2.zero; }
                 if (_artGroup != null) _artGroup.alpha = (1f - p) * _reserveDim;      // dissolve
                 if (_barGroup != null) _barGroup.alpha = 1f - p;                      // HP bar despawns
                 if (_flash != null) _flash.color = new Color(0.05f, 0.05f, 0.08f, p * 0.7f);
@@ -210,10 +253,13 @@ namespace MTA.Battle
             }
 
             Vector2 apos = _basePos + idle + animOff + _impulse + combatOffset;
+            _vel = (apos - _lastPos) / Mathf.Max(dt, 1e-4f); _lastPos = apos;   // for lean & auto-stretch
             _rt.anchoredPosition = apos;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
             _rt.localRotation = Quaternion.identity;
+            ApplyDeform(dt);
             if (_artGroup != null) _artGroup.alpha = _reserveDim;
+            if (_impSilT > 0f) { _impSilT -= dt; flashC = new Color(1f, 1f, 1f, 1f); }   // impact-frame silhouette
             if (_flash != null) _flash.color = flashC;
             UpdateShadow(apos, spawnScale, 1f);
         }
