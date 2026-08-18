@@ -77,6 +77,8 @@ namespace MTA.App
             grt.offsetMin = new Vector2(3, 0); grt.offsetMax = new Vector2(-3, -3);
             var gi = gloss.GetComponent<Image>(); gi.color = new Color(1f, 1f, 1f, 0.07f); gi.raycastTarget = false;
 
+            var punch = go.AddComponent<ButtonPunch>();
+            b.onClick.AddListener(punch.Punch);
             b.onClick.AddListener(MTA.Battle.AudioManager.PlayClick);
             if (onClick != null) b.onClick.AddListener(() => onClick());
             Label(rt, text, 32, Vector2.zero, size, font);
@@ -86,6 +88,36 @@ namespace MTA.App
         public static void SetButtonColor(Button b, Color c)
         {
             if (b != null) b.GetComponent<Image>().color = c;
+        }
+
+        // Minimal working slider (track + fill + round handle).
+        public static Slider Slider(Transform parent, Vector2 pos, Vector2 size, float value, Action<float> onChange)
+        {
+            var root = new GameObject("Slider", typeof(RectTransform), typeof(Image), typeof(Slider));
+            var rt = root.GetComponent<RectTransform>(); rt.SetParent(parent, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = size; rt.anchoredPosition = pos;
+            var bg = root.GetComponent<Image>(); bg.sprite = MTA.Battle.ProceduralArt.RoundedRect(); bg.color = new Color(0, 0, 0, 0.5f);
+
+            var fillArea = new GameObject("FillArea", typeof(RectTransform)).GetComponent<RectTransform>();
+            fillArea.SetParent(rt, false); fillArea.anchorMin = new Vector2(0, 0.3f); fillArea.anchorMax = new Vector2(1, 0.7f);
+            fillArea.offsetMin = new Vector2(10, 0); fillArea.offsetMax = new Vector2(-10, 0);
+            var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+            fill.SetParent(fillArea, false); fill.anchorMin = Vector2.zero; fill.anchorMax = new Vector2(1, 1); fill.sizeDelta = new Vector2(10, 0);
+            fill.GetComponent<Image>().color = new Color(0.3f, 0.72f, 1f);
+
+            var handleArea = new GameObject("HandleArea", typeof(RectTransform)).GetComponent<RectTransform>();
+            handleArea.SetParent(rt, false); handleArea.anchorMin = Vector2.zero; handleArea.anchorMax = Vector2.one;
+            handleArea.offsetMin = new Vector2(10, 0); handleArea.offsetMax = new Vector2(-10, 0);
+            var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+            handle.SetParent(handleArea, false); handle.sizeDelta = new Vector2(size.y * 0.9f, size.y * 0.9f);
+            var hImg = handle.GetComponent<Image>(); hImg.sprite = MTA.Battle.ProceduralArt.Disc(); hImg.color = Color.white;
+
+            var slider = root.GetComponent<Slider>();
+            slider.fillRect = fill; slider.handleRect = handle; slider.targetGraphic = hImg;
+            slider.direction = UnityEngine.UI.Slider.Direction.LeftToRight;
+            slider.minValue = 0f; slider.maxValue = 1f; slider.value = value;
+            slider.onValueChanged.AddListener(v => onChange?.Invoke(v));
+            return slider;
         }
 
         // Elemental-triangle colors (Fire/Water/Nature) for UI indicators.

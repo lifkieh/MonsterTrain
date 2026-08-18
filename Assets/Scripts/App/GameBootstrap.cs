@@ -16,7 +16,7 @@ namespace MTA.App
         SpeciesRegistry _reg;
         Font _font;
 
-        RectTransform _menu, _select, _battle, _result, _progress, _collection, _collContent, _popup;
+        RectTransform _menu, _select, _battle, _result, _progress, _collection, _collContent, _popup, _popupCard;
         Text _selectCount, _resultBanner, _resultStats, _progressText, _rewardText, _collHeader, _popupText, _popupTitle;
         RectTransform _mvpHolder;
         int _collFilter = -1;        // -1 = all, else (int)RoleTag
@@ -24,6 +24,7 @@ namespace MTA.App
         RectTransform _detail;
         Text _detailName, _detailStats, _detailXp;
         Image _detailXpFill;
+        RectTransform _detailArt;
         Button _evolveBtn;
         string _detailSpecies;
         RectTransform _career, _careerContent;
@@ -45,6 +46,8 @@ namespace MTA.App
         Dictionary<string, SkillSlot> _slotMap;
         Dictionary<string, AttackStyle> _atkStyles;
         Dictionary<string, Color> _elemColors = new Dictionary<string, Color>();
+        Dictionary<string, string> _elemNames = new Dictionary<string, string>();
+        Dictionary<string, string> _roleNames = new Dictionary<string, string>();
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
         readonly List<Button> _speedButtons = new List<Button>();
 
@@ -66,7 +69,12 @@ namespace MTA.App
             _ctrl = new GameController(_reg, cfg, _obtainable, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
             _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
-            foreach (var s in _reg.All) _elemColors[s.speciesId] = UIFactory.ElementColor(s.element);
+            foreach (var s in _reg.All)
+            {
+                _elemColors[s.speciesId] = UIFactory.ElementColor(s.element);
+                _elemNames[s.speciesId] = s.element;
+                _roleNames[s.speciesId] = MonsterMeta.Role(s).ToString();
+            }
 
             // Meta progression: load or create the player profile.
             _hadSave = SaveSystem.Exists();
@@ -75,6 +83,7 @@ namespace MTA.App
 
             MTA.Battle.AudioManager.Ensure();                       // audio feedback
             MTA.Battle.AudioManager.Muted = _profile.muted;
+            MTA.Battle.AudioManager.PlayMusic(MTA.Battle.Music.Menu);
             ApplyDisplaySettings();                                 // fps + quality from save
 
             if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
@@ -126,6 +135,78 @@ namespace MTA.App
             if (p == GamePhase.Result) ShowResult();
             if (p == GamePhase.Progress) RefreshProgress();
             if (p == GamePhase.Collection) RefreshCollection();
+
+            // Music: menu theme everywhere except battle (view sets Battle) and result (ShowResult sets sting).
+            if (p != GamePhase.Battle && p != GamePhase.Result)
+                MTA.Battle.AudioManager.PlayMusic(MTA.Battle.Music.Menu);
+
+            AnimatePanel(PanelFor(p));   // page transition
+        }
+
+        RectTransform PanelFor(GamePhase p)
+        {
+            switch (p)
+            {
+                case GamePhase.MainMenu: return _menu;
+                case GamePhase.TeamSelect: return _select;
+                case GamePhase.Battle: return _battle;
+                case GamePhase.Result: return _result;
+                case GamePhase.Progress: return _progress;
+                case GamePhase.Collection: return _collection;
+                case GamePhase.Detail: return _detail;
+                case GamePhase.Career: return _career;
+                case GamePhase.Daily: return _daily;
+                case GamePhase.Settings: return _settings;
+                case GamePhase.About: return _about;
+                default: return null;
+            }
+        }
+
+        // Combo King: the fighter that landed the most damaging hits.
+        string ComboKing(BattleResult r)
+        {
+            if (r == null) return "-";
+            var sp = new Dictionary<string, string>(); var cnt = new Dictionary<string, int>();
+            foreach (var e in r.events)
+            {
+                if (e.kind == "Spawn") sp[e.actorTeam + "_" + e.actorSlot] = e.extra;
+                else if (e.kind == "Action" && e.actorTeam != e.targetTeam)
+                { string k = e.actorTeam + "_" + e.actorSlot; cnt.TryGetValue(k, out var c); cnt[k] = c + 1; }
+            }
+            int best = 0; string bk = "-";
+            foreach (var kv in cnt) if (kv.Value > best) { best = kv.Value; sp.TryGetValue(kv.Key, out var s); bk = (s ?? "?") + "  (" + best + " hits)"; }
+            return bk;
+        }
+
+        System.Collections.IEnumerator Punch(RectTransform rt)
+        {
+            if (rt == null) yield break;
+            float t = 0f;
+            while (t < 1f) { t += Time.unscaledDeltaTime / 0.35f; rt.localScale = Vector3.one * (1f + Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI) * 0.18f); yield return null; }
+            rt.localScale = Vector3.one;
+        }
+
+        // Page transition: pop + fade the incoming panel in.
+        void AnimatePanel(RectTransform panel)
+        {
+            if (panel == null) return;
+            var cg = panel.GetComponent<CanvasGroup>();
+            if (cg == null) cg = panel.gameObject.AddComponent<CanvasGroup>();
+            StartCoroutine(PanelIn(panel, cg));
+        }
+
+        System.Collections.IEnumerator PanelIn(RectTransform panel, CanvasGroup cg)
+        {
+            float t = 0f;
+            while (t < 1f && panel != null && panel.gameObject.activeInHierarchy)
+            {
+                t += Time.unscaledDeltaTime / 0.22f;
+                float e = 1f - (1f - Mathf.Clamp01(t)) * (1f - Mathf.Clamp01(t));   // ease-out
+                cg.alpha = e;
+                panel.localScale = Vector3.one * Mathf.Lerp(0.96f, 1f, e);
+                yield return null;
+            }
+            if (panel != null) { cg.alpha = 1f; panel.localScale = Vector3.one; }
         }
 
         void ShowResult()
@@ -133,6 +214,9 @@ namespace MTA.App
             bool won = _ctrl.PlayerWon;
             var r = _ctrl.Session.lastResult;
             var d = r != null ? BattleDrama.Compute(r) : null;
+            MTA.Battle.AudioManager.PlayMusic(won ? MTA.Battle.Music.Victory : MTA.Battle.Music.Defeat);
+            if (!won) MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Defeat);
+
             _resultBanner.text = (won ? "VICTORY" : "DEFEAT") + (d != null ? "\n" + d.bannerTitle : "");
             _resultBanner.color = won ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.5f);
             _resultStats.text = d == null ? "" :
@@ -140,20 +224,26 @@ namespace MTA.App
                 "Battle Duration: " + d.duration.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " s\n" +
                 "Survivors: " + d.winnerAlive + " vs " + d.loserAlive + "\n\n" +
                 "Damage Leader: " + d.damageLeader + "\n" +
-                "Kills Leader: " + d.killsLeader + "\n" +
+                "Combo King: " + ComboKing(r) + "\n" +
                 "Healing Leader: " + d.healingLeader;
 
-            // MVP showcase (top damage dealer).
+            // MVP showcase — procedural portrait + label.
             if (_mvpHolder != null)
             {
                 for (int i = _mvpHolder.childCount - 1; i >= 0; i--) Destroy(_mvpHolder.GetChild(i).gameObject);
                 if (d != null && !string.IsNullOrEmpty(d.mvpSpecies))
                 {
-                    IconBadge(_mvpHolder, d.mvpSpecies, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(24, 0), 110, 44);
+                    var msp = _reg.Get(d.mvpSpecies);
+                    if (msp != null)
+                    {
+                        var art = MTA.Battle.MonsterArt.Build(_mvpHolder, d.mvpSpecies, msp.element, MonsterMeta.Role(msp).ToString(), 120);
+                        art.anchoredPosition = new Vector2(-300, 0);
+                    }
                     UIFactory.Label(_mvpHolder, "MVP:  " + d.mvpSpecies + "  (" + (d.mvpTeam == 0 ? "You" : "Enemy") + ")",
-                        34, new Vector2(70, 0), new Vector2(660, 130), _font);
+                        34, new Vector2(40, 0), new Vector2(620, 130), _font);
                 }
             }
+            StartCoroutine(Punch(_resultBanner.rectTransform));
 
             // Encyclopedia: mark the enemies we just fought as seen.
             foreach (var e in _ctrl.Session.enemyTeam) _profile.MarkSeen(e);
@@ -181,6 +271,8 @@ namespace MTA.App
             }
 
             _rewardText.text = rt;
+            if (won) MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Reward);
+            if (rw.playerLevelsGained > 0 || rw.leveledUp.Count > 0) MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.LevelUp);
             if (rw.newlyUnlocked.Count > 0) ShowNewMonster(rw.newlyUnlocked);   // new-monster popup
         }
 
@@ -295,19 +387,26 @@ namespace MTA.App
             tile.anchorMin = tile.anchorMax = new Vector2(0.5f, 0.5f); tile.sizeDelta = size; tile.anchoredPosition = pos;
             if (seen)
             {
-                // Rarity frame (top strip) + element badge (card-style identity).
+                // Rarity frame (top strip) + element badge + procedural portrait.
                 var frame = UIFactory.Panel(tile, "Frame", RarityColor(MonsterMeta.Rarity(sp)));
                 frame.anchorMin = new Vector2(0, 1); frame.anchorMax = new Vector2(1, 1); frame.pivot = new Vector2(0.5f, 1);
                 frame.sizeDelta = new Vector2(0, 9); frame.anchoredPosition = Vector2.zero;
                 frame.GetComponent<Image>().raycastTarget = false;
-                UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 34, size.y / 2 - 34), 48, _font);
+                var art = MTA.Battle.MonsterArt.Build(tile, id, sp.element, MonsterMeta.Role(sp).ToString(), Mathf.Min(size.x, size.y) * 0.62f);
+                art.anchoredPosition = new Vector2(0, 22);
+                UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 32, size.y / 2 - 32), 46, _font);
+                UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 22, new Vector2(0, -34), new Vector2(size.x - 20, 30), _font).color = new Color(1f, 0.85f, 0.3f);
             }
-            if (seen) IconBadge(tile, id, new Vector2(0, 1), new Vector2(0, 1), new Vector2(12, -12), 64, 26);
-            UIFactory.Label(tile, seen ? id : "???", 26, new Vector2(0, 30), new Vector2(size.x - 20, 46), _font);
-            string state = owned ? "OWNED  Lv " + (m != null ? m.level : 1) : seen ? "SEEN" : "LOCKED";
-            var stx = UIFactory.Label(tile, state, 22, new Vector2(0, -30), new Vector2(size.x - 20, 40), _font);
+            else
+            {
+                var siloRoot = MTA.Battle.MonsterArt.Build(tile, "locked_" + id, "", "Bruiser", Mathf.Min(size.x, size.y) * 0.5f);
+                siloRoot.anchoredPosition = new Vector2(0, 22);
+                siloRoot.gameObject.AddComponent<CanvasGroup>().alpha = 0.16f;   // dim locked silhouette
+            }
+            UIFactory.Label(tile, seen ? id : "???", 24, new Vector2(0, -58), new Vector2(size.x - 16, 42), _font);
+            string state = owned ? "Lv " + (m != null ? m.level : 1) : seen ? "SEEN" : "LOCKED";
+            var stx = UIFactory.Label(tile, state, 20, new Vector2(0, -78), new Vector2(size.x - 16, 32), _font);
             stx.color = owned ? new Color(0.5f, 1f, 0.6f) : seen ? new Color(0.9f, 0.9f, 0.5f) : new Color(0.7f, 0.7f, 0.7f);
-            if (seen) UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 26, new Vector2(0, -70), new Vector2(size.x - 20, 34), _font).color = new Color(1f, 0.85f, 0.3f);
             if (owned)
             {
                 var btn = tile.gameObject.AddComponent<Button>();
@@ -323,6 +422,9 @@ namespace MTA.App
         {
             _detail = UIFactory.Panel(parent, "DetailPanel", new Color(0.1f, 0.11f, 0.14f));
             _detailName = UIFactory.Label(_detail, "", 46, new Vector2(0, 820), new Vector2(1000, 90), _font);
+            _detailArt = new GameObject("DetailArt", typeof(RectTransform)).GetComponent<RectTransform>();
+            _detailArt.SetParent(_detail, false); _detailArt.anchorMin = _detailArt.anchorMax = new Vector2(0.5f, 0.5f);
+            _detailArt.sizeDelta = new Vector2(180, 180); _detailArt.anchoredPosition = new Vector2(340, 630);
 
             var bgo = new GameObject("XpBg", typeof(RectTransform), typeof(Image));
             var bgr = bgo.GetComponent<RectTransform>(); bgr.SetParent(_detail, false);
@@ -349,6 +451,7 @@ namespace MTA.App
             if (evo == null) return;
             SaveSystem.Save(_profile);
             _detailSpecies = evo;                            // now viewing the evolved form
+            MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Evolution);
             ShowPopup("EVOLUTION!", (sp != null ? sp.displayName : _detailSpecies) + "  evolved into\n" + _reg.Get(evo).displayName + "!");
             RefreshDetail();
         }
@@ -359,6 +462,11 @@ namespace MTA.App
             var sp = _reg.Get(id);
             var m = _profile.Find(id) ?? new MonsterSave { speciesId = id, level = 1 };
             _detailName.text = id + "    Lv " + m.level;
+            if (_detailArt != null)
+            {
+                for (int i = _detailArt.childCount - 1; i >= 0; i--) Destroy(_detailArt.GetChild(i).gameObject);
+                MTA.Battle.MonsterArt.Build(_detailArt, id, sp.element, MonsterMeta.Role(sp).ToString(), 160);
+            }
             int next = Progression.MonsterXpForNext(m.level);
             _detailXpFill.fillAmount = m.level >= Progression.MaxLevel ? 1f : Mathf.Clamp01((float)m.xp / next);
             _detailXp.text = "XP  " + m.xp + " / " + next + "        Coins: " + _profile.coins;
@@ -402,7 +510,7 @@ namespace MTA.App
             int gained = Progression.Train(_profile, _detailSpecies);
             if (gained < 0) { ShowPopup("NOT ENOUGH COINS", "Need " + Progression.TrainCost + " coins.\nWin battles to earn more."); return; }
             SaveSystem.Save(_profile);
-            if (gained > 0) { var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", _detailSpecies + "  reached  Lv " + (m != null ? m.level : 1)); }
+            if (gained > 0) { MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.LevelUp); var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", _detailSpecies + "  reached  Lv " + (m != null ? m.level : 1)); }
             RefreshDetail();
         }
 
@@ -478,6 +586,7 @@ namespace MTA.App
             if (r.claimed)
             {
                 SaveSystem.Save(_profile);
+                MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Reward);
                 ShowPopup("DAILY REWARD", "Day " + r.streak + " streak!\n+" + r.coins + " coins" +
                     (r.streakReset ? "\n(streak restarted)" : ""));
             }
@@ -513,13 +622,25 @@ namespace MTA.App
             _settings = UIFactory.Panel(parent, "SettingsPanel", new Color(0.09f, 0.1f, 0.13f));
             UIFactory.Label(_settings, "SETTINGS", 48, new Vector2(0, 840), new Vector2(1000, 90), _font);
             _settingsInfo = UIFactory.Label(_settings, "", 32, new Vector2(0, 660), new Vector2(1000, 130), _font);
-            _muteBtn = UIFactory.Button(_settings, MuteLabel(), new Vector2(0, 470), new Vector2(560, 110), _font, ToggleMute);
-            UIFactory.Button(_settings, "FRAME RATE", new Vector2(0, 330), new Vector2(560, 110), _font, ToggleFps);
-            UIFactory.Button(_settings, "QUALITY", new Vector2(0, 190), new Vector2(560, 110), _font, ToggleQuality);
-            UIFactory.Button(_settings, "ABOUT / CREDITS", new Vector2(0, 30), new Vector2(560, 110), _font, () => _ctrl.ToAbout());
+            _muteBtn = UIFactory.Button(_settings, MuteLabel(), new Vector2(0, 560), new Vector2(560, 100), _font, ToggleMute);
+            UIFactory.Button(_settings, "FRAME RATE", new Vector2(-150, 440), new Vector2(360, 100), _font, ToggleFps);
+            UIFactory.Button(_settings, "QUALITY", new Vector2(230, 440), new Vector2(320, 100), _font, ToggleQuality);
+
+            // Independent volume sliders (persisted in PlayerPrefs).
+            VolumeRow("MUSIC", 300, MTA.Battle.AudioManager.MusicVolume, v => MTA.Battle.AudioManager.SetMusicVolume(v));
+            VolumeRow("SFX", 190, MTA.Battle.AudioManager.SfxVolume, v => MTA.Battle.AudioManager.SetVolume(MTA.Battle.AudioBus.Sfx, v));
+            VolumeRow("UI", 80, MTA.Battle.AudioManager.UiVolume, v => { MTA.Battle.AudioManager.SetVolume(MTA.Battle.AudioBus.Ui, v); MTA.Battle.AudioManager.PlayClick(); });
+
+            UIFactory.Button(_settings, "ABOUT / CREDITS", new Vector2(0, -80), new Vector2(560, 100), _font, () => _ctrl.ToAbout());
             UIFactory.Label(_settings, "v" + Application.version + "    com.trainyourmonster.game", 24, new Vector2(0, -740), new Vector2(1000, 50), _font)
                 .color = new Color(0.6f, 0.6f, 0.7f);
             UIFactory.Button(_settings, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+
+        void VolumeRow(string label, float y, float value, System.Action<float> onChange)
+        {
+            UIFactory.Label(_settings, label, 28, new Vector2(-340, y), new Vector2(220, 60), _font);
+            UIFactory.Slider(_settings, new Vector2(120, y), new Vector2(560, 46), value, onChange);
         }
 
         void RefreshSettings()
@@ -570,7 +691,9 @@ namespace MTA.App
         {
             _popup = UIFactory.Panel(parent, "Popup", new Color(0, 0, 0, 0.75f));
             var card = UIFactory.Panel(_popup, "PopupCard", new Color(0.15f, 0.16f, 0.22f));
+            card.GetComponent<Image>().sprite = MTA.Battle.ProceduralArt.RoundedRect();
             card.anchorMin = card.anchorMax = new Vector2(0.5f, 0.5f); card.sizeDelta = new Vector2(840, 520); card.anchoredPosition = Vector2.zero;
+            _popupCard = card;
             _popupTitle = UIFactory.Label(card, "NEW MONSTER!", 48, new Vector2(0, 160), new Vector2(780, 100), _font);
             _popupTitle.color = new Color(1f, 0.9f, 0.4f);
             _popupText = UIFactory.Label(card, "", 36, new Vector2(0, 10), new Vector2(780, 220), _font);
@@ -585,6 +708,21 @@ namespace MTA.App
             _popupText.text = body;
             _popup.gameObject.SetActive(true);
             _popup.SetAsLastSibling();
+            if (_popupCard != null) StartCoroutine(PopIn(_popupCard));
+        }
+
+        System.Collections.IEnumerator PopIn(RectTransform card)
+        {
+            float t = 0f;
+            while (t < 1f && card != null)
+            {
+                t += Time.unscaledDeltaTime / 0.24f;
+                float e = Mathf.Clamp01(t);
+                float s = Mathf.Lerp(0.7f, 1f, 1f - (1f - e) * (1f - e));   // ease-out overshoot-ish
+                card.localScale = Vector3.one * s;
+                yield return null;
+            }
+            if (card != null) card.localScale = Vector3.one;
         }
 
         void ShowNewMonster(List<string> ids) => ShowPopup("NEW MONSTER!", string.Join("\n", ids));
@@ -711,6 +849,7 @@ namespace MTA.App
             if (result == null) return;
             var replay = ReplayBuilder.Build(result, _slotMap);
             _view.elementColors = _elemColors;            // element indicators on fighters
+            _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

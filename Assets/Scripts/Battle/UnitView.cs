@@ -9,8 +9,8 @@ namespace MTA.Battle
     // knockback+fade+sink, victory bounce. Smooth + delayed HP bar. Renders only.
     public class UnitView : MonoBehaviour
     {
-        Image _frame, _body, _hpFill, _hpDelayed; Text _name; RectTransform _rt;
-        Vector2 _basePos; Color _bodyColor;
+        Image _frame, _flash, _hpFill, _hpDelayed; CanvasGroup _artGroup; Text _name; RectTransform _rt;
+        Vector2 _basePos;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
         Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic: physics push + reserve staging
@@ -22,18 +22,29 @@ namespace MTA.Battle
         public bool IsDead => _dead;
 
         public void Build(RectTransform parent, Vector2 anchoredPos, Vector2 size,
-            Color teamColor, Color speciesColor, string name, string initial, Font font)
+            Color teamColor, Color speciesColor, string name, string initial, Font font,
+            string element = "", string role = "Bruiser")
         {
             var go = new GameObject("Unit_" + name, typeof(RectTransform), typeof(Image));
             _rt = go.GetComponent<RectTransform>(); _rt.SetParent(parent, false);
             _rt.sizeDelta = size; _rt.anchoredPosition = anchoredPos; _basePos = anchoredPos;
-            _frame = go.GetComponent<Image>(); _frame.color = teamColor;                 // team frame
+            _frame = go.GetComponent<Image>(); _frame.sprite = ProceduralArt.RoundedRect(); _frame.color = teamColor;   // team frame
 
-            var body = new GameObject("Body", typeof(RectTransform), typeof(Image));
-            var brt = body.GetComponent<RectTransform>(); brt.SetParent(_rt, false);
+            // Rounded species-tinted panel + procedural monster portrait + flash overlay.
+            var inner = new GameObject("Inner", typeof(RectTransform), typeof(Image));
+            var brt = inner.GetComponent<RectTransform>(); brt.SetParent(_rt, false);
             brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one;
             brt.offsetMin = new Vector2(7, 7); brt.offsetMax = new Vector2(-7, -7);
-            _body = body.GetComponent<Image>(); _body.color = speciesColor; _bodyColor = speciesColor;
+            var innerImg = inner.GetComponent<Image>(); innerImg.sprite = ProceduralArt.RoundedRect();
+            innerImg.color = new Color(speciesColor.r * 0.2f, speciesColor.g * 0.2f, speciesColor.b * 0.26f, 0.95f);
+
+            var art = MonsterArt.Build(brt, name, element, role, Mathf.Min(size.x, size.y) * 0.82f);
+            _artGroup = art.gameObject.AddComponent<CanvasGroup>();
+
+            var flashGo = new GameObject("Flash", typeof(RectTransform), typeof(Image));
+            var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(brt, false);
+            frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
+            _flash = flashGo.GetComponent<Image>(); _flash.sprite = ProceduralArt.Disc(); _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
 
             // Nameplate bar at top.
             var plate = new GameObject("Plate", typeof(RectTransform), typeof(Image));
@@ -122,7 +133,8 @@ namespace MTA.Battle
                 _rt.anchoredPosition = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
                 _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
                 _rt.localRotation = Quaternion.Euler(0, 0, _knock.x * 25f * p);
-                if (_body != null) _body.color = new Color(0.15f, 0.15f, 0.15f, (1f - p) * 0.85f);
+                if (_artGroup != null) _artGroup.alpha = (1f - p) * _reserveDim;      // dissolve
+                if (_flash != null) _flash.color = new Color(0.05f, 0.05f, 0.08f, p * 0.7f);
                 return;
             }
 
@@ -130,7 +142,8 @@ namespace MTA.Battle
             float bob = _victory ? 12f : 4f;
             Vector2 idle = new Vector2(0, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.2f) + _basePos.x * 0.01f)) * bob);
             float breathe = 1f + Mathf.Sin(t * 3f + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.03f);
-            Vector2 animOff = Vector2.zero; float animScale = 1f; Color bodyC = _bodyColor;
+            Vector2 animOff = Vector2.zero; float animScale = 1f;
+            Color flashC = new Color(1f, 1f, 1f, 0f);
 
             if (_anim != Anim.None)
             {
@@ -144,12 +157,12 @@ namespace MTA.Battle
                         break;
                     case Anim.Hit:
                         animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * _animMag, 0f);
-                        bodyC = Color.Lerp(Color.white, _bodyColor, p);
+                        flashC = new Color(1f, 1f, 1f, (1f - p) * 0.85f);
                         animScale = 1f + (1f - p) * 0.06f * _animMag;
                         break;
                     case Anim.Heal:
                         animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
-                        bodyC = Color.Lerp(new Color(0.4f, 1f, 0.55f), _bodyColor, p);
+                        flashC = new Color(0.4f, 1f, 0.55f, Mathf.Sin(p * Mathf.PI) * 0.7f);
                         break;
                 }
                 if (p >= 1f) _anim = Anim.None;
@@ -158,7 +171,8 @@ namespace MTA.Battle
             _rt.anchoredPosition = _basePos + idle + animOff + _impulse;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
             _rt.localRotation = Quaternion.identity;
-            if (_body != null) _body.color = new Color(bodyC.r, bodyC.g, bodyC.b, bodyC.a * _reserveDim);
+            if (_artGroup != null) _artGroup.alpha = _reserveDim;
+            if (_flash != null) _flash.color = flashC;
         }
 
         static Text MakeText(RectTransform parent, Font font, string s, int size, Vector2 pos, TextAnchor anchor)

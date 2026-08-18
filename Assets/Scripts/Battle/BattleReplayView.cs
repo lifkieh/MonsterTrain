@@ -31,6 +31,7 @@ namespace MTA.Battle
         readonly Dictionary<int, AttackStyle> _styleByKey = new Dictionary<int, AttackStyle>();
         readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
+        public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
         RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
         readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
@@ -38,6 +39,7 @@ namespace MTA.Battle
         double _clock, _simPerReal; bool _playing, _finishedFired;
         float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
         float _slowmo = 1f, _slowmoT;
+        Image _screenFlash; float _flashT;
 
         static int Key(int t, int s) => t * 100 + s;
         public void SetSpeed(float m) => speedMultiplier = m;
@@ -50,6 +52,7 @@ namespace MTA.Battle
             _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f;
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
+            AudioManager.PlayMusic(Music.Battle);
 
             // Auto-pace: 15–60 s window; close matches longer, stomps faster.
             double sim = Math.Max(1.0, result.duration);
@@ -73,9 +76,19 @@ namespace MTA.Battle
             _stage.anchorMin = _stage.anchorMax = new Vector2(0.5f, 0.5f);
             _stage.sizeDelta = new Vector2(1080, 1600); _stage.anchoredPosition = Vector2.zero;
 
-            _arena = new BattleArena(); _arena.Build(_stage);   // procedural arena, behind fighters
+            // Arena themed by the enemy front-liner's element.
+            string arenaElem = "";
+            foreach (var u in _pb.Units) { if (u.team == 1) { if (elementNames != null) elementNames.TryGetValue(u.speciesId, out arenaElem); break; } }
+            _arena = new BattleArena(); _arena.Build(_stage, arenaElem);   // procedural element arena
             _texts = new FloatingTextPool(_stage, _font);
             _fx = new BattleFx(_stage);
+
+            // Full-screen crit/ultimate flash overlay (over the fighters).
+            var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(Image));
+            var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(_root, false);
+            frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.sizeDelta = new Vector2(1400, 2000); frt.anchoredPosition = Vector2.zero;
+            _screenFlash = flashGo.GetComponent<Image>(); _screenFlash.color = new Color(1, 1, 1, 0); _screenFlash.raycastTarget = false;
+            _flashT = 0f;
             _views.Clear(); _styleByKey.Clear(); _speciesByKey.Clear();
 
             var size = new Vector2(240, 160);
@@ -86,8 +99,10 @@ namespace MTA.Battle
                 var speciesColor = new Color(sc.r, sc.g, sc.b);
                 var v = new GameObject("UnitView").AddComponent<UnitView>();
                 v.transform.SetParent(_stage, false);
+                string elem = elementNames != null && elementNames.TryGetValue(u.speciesId, out var en) ? en : "";
+                string role = roleNames != null && roleNames.TryGetValue(u.speciesId, out var rn) ? rn : "Bruiser";
                 v.Build(_stage, Vector2.zero, size, teamColor, speciesColor,
-                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font);
+                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font, elem, role);
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
                 int k = Key(u.team, u.slot);
@@ -222,6 +237,12 @@ namespace MTA.Battle
                 foreach (var u in _pb.Units)
                     if (_views.TryGetValue(Key(u.team, u.slot), out var v)) v.SetHp(u.currentHp);
                 UpdatePips();
+
+                // Dynamic battle audio: intensify as it gets close / down to the wire.
+                int aliveA = _pb.AliveCount(0), aliveB = _pb.AliveCount(1);
+                float closeness = 1f - Mathf.Abs(aliveA - aliveB) * 0.34f;
+                float climax = (aliveA + aliveB) <= 1 ? 1f : ((aliveA + aliveB) <= 2 ? 0.6f : 0f);
+                AudioManager.SetBattleIntensity(Mathf.Clamp01(Mathf.Max(closeness * 0.5f, climax)));
 
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
@@ -366,6 +387,7 @@ namespace MTA.Battle
                     HitStop(impact / sp);
                     Shake(ult ? 22f : b.crit ? 15f : 8f);
                     ZoomPunch(ult ? 0.12f : b.crit ? 0.07f : 0.03f);
+                    if (b.crit || ult) StartCoroutine(Shockwave(tpos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
                 }
                 yield return new WaitForSecondsRealtime(step);
             }
@@ -387,9 +409,9 @@ namespace MTA.Battle
             switch (c)
             {
                 case ChoreoCam.ZoomCombo: _zoomTarget = 1.06f; break;
-                case ChoreoCam.ShakeCrit: _zoomTarget = 1.09f; Shake(12f); ZoomPunch(0.05f); break;
-                case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); break;
-                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); break;
+                case ChoreoCam.ShakeCrit: _zoomTarget = 1.09f; Shake(12f); ZoomPunch(0.05f); FlashScreen(0.5f); break;
+                case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); FlashScreen(0.8f); break;
+                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); break;
                 case ChoreoCam.ZoomWinner: _zoomTarget = 1.12f; break;
             }
         }
@@ -411,6 +433,25 @@ namespace MTA.Battle
         static Color ProjColor(AttackStyle s) => s == AttackStyle.MageCast ? new Color(0.6f, 0.5f, 1f) : new Color(1f, 0.9f, 0.4f);
         static Vector2 Jitter() => new Vector2(UnityEngine.Random.Range(-24f, 24f), 40f);
         static Vector2 ComboJit(int i) => new Vector2(UnityEngine.Random.Range(-40f, 40f), UnityEngine.Random.Range(-30f, 40f));
+
+        void FlashScreen(float amt) => _flashT = Mathf.Max(_flashT, amt);
+
+        IEnumerator Shockwave(Vector2 pos, Color col)
+        {
+            var go = new GameObject("Shock", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_stage, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.anchoredPosition = pos; rt.sizeDelta = new Vector2(60, 60);
+            var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Ring(); img.color = col; img.raycastTarget = false;
+            float t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / 0.35f; float e = Mathf.Clamp01(t);
+                rt.sizeDelta = Vector2.one * Mathf.Lerp(60f, 440f, e);
+                img.color = new Color(col.r, col.g, col.b, (1f - e) * 0.7f);
+                yield return null;
+            }
+            Destroy(go);
+        }
 
         void HitStop(float d) => _hitstop = Mathf.Max(_hitstop, d);
         void Shake(float mag) { float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
@@ -435,6 +476,13 @@ namespace MTA.Battle
             _stage.localScale = Vector3.one * _zoom;
 
             _arena?.SetParallax(camOffset);
+            _arena?.Tick(Time.deltaTime);
+
+            if (_screenFlash != null)
+            {
+                _flashT = Mathf.Max(0f, _flashT - Time.deltaTime * 3.5f);
+                _screenFlash.color = new Color(1f, 1f, 1f, _flashT * 0.55f);
+            }
         }
     }
 }
