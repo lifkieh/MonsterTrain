@@ -94,6 +94,30 @@ namespace MTA.Battle
             }
             RelayoutTeam(0, false);
             RelayoutTeam(1, false);
+            IntroApproach();
+        }
+
+        // Fighting-game intro: the two active fighters rush in from their edges.
+        void IntroApproach()
+        {
+            for (int team = 0; team < 2; team++)
+            {
+                var v = ActiveView(team); if (v == null) continue;
+                var anchor = ActiveAnchor(team);
+                float far = team == 0 ? -900f : 900f;
+                v.EnterFrom(new Vector2(far, anchor.y), anchor);
+            }
+        }
+
+        UnitView ActiveView(int team)
+        {
+            foreach (var u in _pb.Units)
+            {
+                if (u.team != team) continue;
+                var v = View(u.team, u.slot);
+                if (v != null && !v.IsDead) return v;
+            }
+            return null;
         }
 
         // ---- Fighting-game staging: front-most alive = active (centered, big),
@@ -250,17 +274,21 @@ namespace MTA.Battle
 
             if (b.dodge && target != null)
             {
+                float sp0 = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
                 target.Dodge(new Vector2(-dir.x, 0.3f));
                 _texts.Spawn(target.BasePos + new Vector2(0, 72), "DODGE", CDodge, 26);
                 AudioManager.Play(Sfx.Click);
-                HitStop(0.14f);
-                yield return new WaitForSecondsRealtime(0.16f);
+                HitStop(0.14f / sp0);
+                yield return new WaitForSecondsRealtime(0.16f / sp0);
             }
 
             int n = Mathf.Clamp(b.hits, 1, 15);
-            float step = ult ? 0.06f : b.crit ? 0.055f : 0.05f;
+            float baseStep = ult ? 0.06f : b.crit ? 0.055f : 0.05f;
             for (int i = 0; i < n; i++)
             {
+                // Respect the 0.5×–4× playback buttons: fast-forward speeds combos too.
+                float sp = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
+                float step = baseStep / sp;
                 bool last = i == n - 1;
                 Vector2 tpos = target != null ? target.BasePos : PosOf(tt, ts);
                 actor?.PlayAttack(dir, DashDist(st, ult) * (0.55f + 0.45f * (i / (float)n)), ult && last);
@@ -276,7 +304,7 @@ namespace MTA.Battle
                     Shake(ult ? 18f : b.crit ? 12f : 7f);
                     if (b.crit || ult) ZoomPunch(ult ? 0.1f : 0.05f);
                 }
-                HitStop(b.hitStop + step + 0.02f);   // hold the sim clock across the combo
+                HitStop((b.hitStop + baseStep + 0.02f) / sp);   // hold the sim clock across the combo
                 yield return new WaitForSecondsRealtime(step);
             }
         }
