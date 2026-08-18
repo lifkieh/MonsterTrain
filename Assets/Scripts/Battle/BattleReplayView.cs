@@ -31,7 +31,8 @@ namespace MTA.Battle
         readonly Dictionary<int, AttackStyle> _styleByKey = new Dictionary<int, AttackStyle>();
         readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
-        RectTransform _root, _stage; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
+        RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
+        readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
         float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
@@ -95,6 +96,57 @@ namespace MTA.Battle
             RelayoutTeam(0, false);
             RelayoutTeam(1, false);
             IntroApproach();
+            BuildHud();
+        }
+
+        // Fighting-game round pips: player team left, enemy right, screen-fixed
+        // (parented to _root, so camera zoom/shake never move it). Pips deplete as
+        // monsters fall — a clear "who's winning" read over the arena.
+        void BuildHud()
+        {
+            if (_hud != null) Destroy(_hud.gameObject);
+            var go = new GameObject("Hud", typeof(RectTransform));
+            _hud = go.GetComponent<RectTransform>(); _hud.SetParent(_root, false); _hud.SetAsLastSibling();
+            _hud.anchorMin = _hud.anchorMax = new Vector2(0.5f, 0.5f);
+            _hud.sizeDelta = new Vector2(1080, 120); _hud.anchoredPosition = new Vector2(0, 740);
+            _pips0.Clear(); _pips1.Clear();
+            HudLabel("VS", 40, Vector2.zero, new Vector2(200, 70));
+            for (int i = 0; i < CountTeam(0); i++) _pips0.Add(Pip(new Vector2(-160 - i * 74, 0)));
+            for (int i = 0; i < CountTeam(1); i++) _pips1.Add(Pip(new Vector2(160 + i * 74, 0)));
+        }
+
+        Text HudLabel(string s, int size, Vector2 pos, Vector2 sz)
+        {
+            var go = new GameObject("T", typeof(RectTransform), typeof(Text));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_hud, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = sz; rt.anchoredPosition = pos;
+            var t = go.GetComponent<Text>(); t.font = _font; t.text = s; t.fontSize = size;
+            t.alignment = TextAnchor.MiddleCenter; t.color = Color.white; t.raycastTarget = false;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
+            return t;
+        }
+
+        Image Pip(Vector2 pos)
+        {
+            var go = new GameObject("Pip", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_hud, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = new Vector2(50, 50); rt.anchoredPosition = pos;
+            var img = go.GetComponent<Image>(); img.raycastTarget = false; return img;
+        }
+
+        int CountTeam(int t) { int n = 0; foreach (var u in _pb.Units) if (u.team == t) n++; return n; }
+
+        void UpdatePips()
+        {
+            SetPipRow(_pips0, 0, new Color(0.32f, 0.6f, 1f));
+            SetPipRow(_pips1, 1, new Color(1f, 0.42f, 0.36f));
+        }
+
+        void SetPipRow(List<Image> pips, int team, Color live)
+        {
+            int alive = _pb.AliveCount(team);
+            var dead = new Color(0.2f, 0.2f, 0.24f, 0.85f);
+            for (int i = 0; i < pips.Count; i++) if (pips[i] != null) pips[i].color = i < alive ? live : dead;
         }
 
         // Fighting-game intro: the two active fighters rush in from their edges.
@@ -167,6 +219,7 @@ namespace MTA.Battle
 
                 foreach (var u in _pb.Units)
                     if (_views.TryGetValue(Key(u.team, u.slot), out var v)) v.SetHp(u.currentHp);
+                UpdatePips();
 
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
