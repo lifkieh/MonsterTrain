@@ -14,6 +14,7 @@ namespace MTA.Battle
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
         Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic: physics push + reserve staging
+        public Vector2 combatOffset;    // view-driven fight choreography (dash / launch / slam)
 
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
@@ -182,7 +183,7 @@ namespace MTA.Battle
                 if (p >= 1f) _anim = Anim.None;
             }
 
-            _rt.anchoredPosition = _basePos + idle + animOff + _impulse;
+            _rt.anchoredPosition = _basePos + idle + animOff + _impulse + combatOffset;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
             _rt.localRotation = Quaternion.identity;
             if (_artGroup != null) _artGroup.alpha = _reserveDim;

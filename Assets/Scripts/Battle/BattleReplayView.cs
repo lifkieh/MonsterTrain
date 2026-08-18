@@ -350,61 +350,151 @@ namespace MTA.Battle
             }
         }
 
-        // Procedural combo chain: staggered hits with hit-stop, connecting hit
-        // carries the (single, sim-accurate) damage number, knockback + camera.
+        // Fighting-game choreography: dash-in → ground combo → launcher → air combo
+        // → slam → recovery, plus dodge+counter. Transform-driven movement on the
+        // sprites; the connecting hit carries the single sim-accurate damage number.
+        // Presentation only — never re-simulates.
         IEnumerator Combo(int at, int as_, int tt, int ts, ChoreoBeat b, AttackStyle st, string actorSp, bool ult)
         {
-            var actor = View(at, as_); var target = View(tt, ts);
+            var A = View(at, as_); var T = View(tt, ts);
             Vector2 dir = new Vector2(at == 0 ? 1f : -1f, 0f);
-
-            if (b.dodge && target != null)
-            {
-                float sp0 = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
-                Afterimage(target);                                    // sidestep afterimage
-                target.Dodge(new Vector2(-dir.x, 0.3f));
-                _texts.Spawn(target.BasePos + new Vector2(0, 78), "MISS", CDodge, 34);
-                _vfx.Play("puff", target.BasePos, 150f, new Color(1f, 1f, 1f, 0.9f));
-                AudioManager.Play(Sfx.Hover);                          // dodge whoosh
-                HitStop(0.16f / sp0 + 0.02f);   // keep the sim frozen through the dodge beat
-                yield return new WaitForSecondsRealtime(0.16f / sp0);
-            }
-
+            float sp = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
             int n = Mathf.Clamp(b.hits, 1, 15);
-            int denom = Mathf.Max(1, n - 1);
-            float baseStep = ult ? 0.055f : b.crit ? 0.05f : 0.045f;
-            for (int i = 0; i < n; i++)
+            bool big = b.crit || ult;
+
+            // ---- Dodge (sidestep + afterimage + MISS) then COUNTER ----
+            if (b.dodge && T != null)
             {
-                // Respect the 0.5×–4× playback buttons; combo accelerates into the finish.
-                float sp = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
-                float ramp = Mathf.Lerp(1.15f, 0.68f, i / (float)denom);
-                float step = baseStep * ramp / sp;
-                bool last = i == n - 1;
-                Vector2 tpos = target != null ? target.BasePos : PosOf(tt, ts);
-                actor?.PlayAttack(dir, DashDist(st, ult) * (0.5f + 0.5f * (i / (float)n)), ult && last);
-                target?.PlayHit(b.crit && last);
-                _fx.Burst(tpos + ComboJit(i), last ? (ult ? BurstKind.Ultimate : b.crit ? BurstKind.Crit : MeleeBurst(st)) : BurstKind.Slash);
-                AudioManager.Play((b.crit || ult) && last ? Sfx.Crit : Sfx.Hit);
-                if (!last)
+                Afterimage(T);
+                T.Dodge(new Vector2(-dir.x, 0.3f));
+                _texts.Spawn(T.BasePos + new Vector2(0, 80), "MISS", CDodge, 34);
+                _vfx.Play("puff", T.BasePos, 150f, new Color(1f, 1f, 1f, 0.9f));
+                AudioManager.Play(Sfx.Hover);
+                HitStop(0.16f / sp);
+                yield return new WaitForSecondsRealtime(0.13f / sp);
+                if (A != null)   // counter flick
                 {
-                    _vfx.Play("hit_small", tpos + ComboJit(i), 130f, Color.white);
-                    Shake(ult ? 5f : 2.5f);
-                    HitStop(step + 0.02f);                                    // hold the sim clock across the whole combo
+                    T.PlayAttack(new Vector2(-dir.x, 0f), 70f, false);
+                    _texts.Spawn(A.BasePos + new Vector2(0, 74), "COUNTER", new Color(1f, 0.9f, 0.4f), 28);
+                    _vfx.Play("hit_small", A.BasePos, 120f, Color.white);
+                    A.PlayHit(false); A.Knock(dir, 40f); Shake(6f); AudioManager.Play(Sfx.Hit);
+                    HitStop(0.14f / sp);
+                    yield return new WaitForSecondsRealtime(0.12f / sp);
                 }
-                else
-                {
-                    _texts.Spawn(tpos + Jitter(), b.amount.ToString(), (b.crit || ult) ? CCrit : CWhite, (b.crit || ult) ? 44 : 30);
-                    if (b.crit) _texts.Spawn(tpos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
-                    if (target != null) { target.Knock(dir, b.knockback); if (b.launch) target.Launch(130f); }
-                    float impact = ult ? 0.10f : b.crit ? 0.085f : 0.055f;    // heavier freeze on the connecting hit
-                    HitStop(impact / sp);
-                    Shake(ult ? 22f : b.crit ? 15f : 8f);
-                    ZoomPunch(ult ? 0.12f : b.crit ? 0.07f : 0.03f);
-                    _vfx.Play(ult ? "explosion" : b.crit ? "hit_big" : "hit_impact", tpos,
-                        ult ? 320f : b.crit ? 240f : 180f, Color.white);
-                    if (b.crit || ult) StartCoroutine(Shockwave(tpos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
-                }
-                yield return new WaitForSecondsRealtime(step);
             }
+
+            // Ranged: no dash/air — quick hits at range (projectile already flew).
+            if (AttackStyles.IsRanged(st) || A == null || T == null)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    bool last = i == n - 1;
+                    Vector2 tp = T != null ? T.BasePos : PosOf(tt, ts);
+                    T?.PlayHit(big && last);
+                    _vfx.Play(last ? (ult ? "explosion" : b.crit ? "hit_big" : "hit_impact") : "hit_small", tp, last ? (ult ? 300f : 180f) : 120f, Color.white);
+                    AudioManager.Play(big && last ? Sfx.Crit : Sfx.Hit);
+                    Shake(last ? (ult ? 18f : b.crit ? 12f : 7f) : 3f);
+                    if (last)
+                    {
+                        _texts.Spawn(tp + Jitter(), b.amount.ToString(), big ? CCrit : CWhite, big ? 44 : 30);
+                        if (T != null) { T.Knock(dir, b.knockback); if (b.launch) T.Launch(120f); }
+                        if (big) StartCoroutine(Shockwave(tp, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
+                    }
+                    HitStop(0.055f / sp + 0.02f);
+                    yield return new WaitForSecondsRealtime(0.05f / sp);
+                }
+                yield break;
+            }
+
+            // ---- Melee fight choreography ----
+            float gap = Mathf.Abs(T.BasePos.x - A.BasePos.x);
+            Vector2 close = new Vector2(dir.x * (gap - 150f), 0f);
+
+            // 1) DASH IN
+            _vfx.Play("speedlines", A.BasePos + dir * 40f, 210f, new Color(1f, 1f, 1f, 0.9f));
+            yield return MoveOffset(A, Vector2.zero, close, 0.10f / sp);
+            Shake(4f);
+
+            // 2) GROUND COMBO
+            int ground = big ? Mathf.Max(2, n / 3) : n;
+            for (int i = 0; i < ground; i++)
+            {
+                A.PlayAttack(dir, 34f, false); T.PlayHit(false);
+                T.combatOffset = new Vector2(dir.x * 10f, 0f);
+                _vfx.Play("hit_small", T.BasePos + ComboJit(i), 130f, Color.white);
+                _fx.Burst(T.BasePos + ComboJit(i), BurstKind.Slash);
+                Shake(4f); AudioManager.Play(Sfx.Hit);
+                HitStop(0.055f / sp + 0.02f);
+                yield return new WaitForSecondsRealtime(0.05f / sp);
+            }
+
+            if (big)
+            {
+                // 3) LAUNCHER — target flies up, attacker jumps after
+                AudioManager.Play(Sfx.Crit);
+                _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
+                _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
+                StartCoroutine(MoveOffset(T, T.combatOffset, new Vector2(dir.x * 24f, 300f), 0.16f / sp));
+                yield return MoveOffset(A, close, close + new Vector2(dir.x * 60f, 260f), 0.16f / sp);
+                ApplyCam(ChoreoCam.ZoomCombo);
+
+                // 4) AIR COMBO
+                int air = Mathf.Max(2, n - ground - 1);
+                for (int i = 0; i < air; i++)
+                {
+                    A.PlayAttack(dir, 26f, ult && i == air - 1); T.PlayHit(true);
+                    T.combatOffset += new Vector2(dir.x * 6f, 14f);
+                    A.combatOffset = new Vector2(A.combatOffset.x, T.combatOffset.y - 20f);
+                    _vfx.Play("hit_impact", T.BasePos, 150f, Color.white);
+                    Shake(6f); AudioManager.Play(Sfx.Hit);
+                    HitStop(0.05f / sp + 0.02f);
+                    yield return new WaitForSecondsRealtime(0.045f / sp);
+                }
+
+                // 5) SLAM DOWN
+                AudioManager.Play(ult ? Sfx.Ultimate : Sfx.Crit);
+                _texts.Spawn(T.BasePos + new Vector2(0, 34), "SLAM!", COrange, 32);
+                yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp);
+                _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
+                _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), CCrit, 46);
+                if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
+                T.Knock(dir, b.knockback);
+                Shake(ult ? 24f : 18f); FlashScreen(ult ? 0.7f : 0.5f); ZoomPunch(ult ? 0.12f : 0.08f);
+                StartCoroutine(Shockwave(T.BasePos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
+                HitStop(0.10f / sp);
+                yield return new WaitForSecondsRealtime(0.1f / sp);
+            }
+            else
+            {
+                // Light finish: last strike + knockback
+                A.PlayAttack(dir, 42f, false); T.PlayHit(true);
+                _vfx.Play("hit_impact", T.BasePos, 180f, Color.white);
+                _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), CWhite, 32);
+                T.Knock(dir, b.knockback);
+                Shake(8f); ZoomPunch(0.03f); AudioManager.Play(Sfx.Hit);
+                HitStop(0.06f / sp);
+                yield return new WaitForSecondsRealtime(0.06f / sp);
+            }
+
+            // 6) RECOVERY — both return to stance
+            StartCoroutine(MoveOffset(T, T.combatOffset, Vector2.zero, 0.2f / sp));
+            yield return MoveOffset(A, A.combatOffset, Vector2.zero, 0.14f / sp);
+        }
+
+        // Lerp a fighter's combat offset (ease-out), holding the sim clock frozen.
+        IEnumerator MoveOffset(UnitView u, Vector2 from, Vector2 to, float dur)
+        {
+            if (u == null) yield break;
+            float t = 0f;
+            while (t < 1f)
+            {
+                t += Time.deltaTime / Mathf.Max(0.01f, dur);
+                float e = 1f - (1f - Mathf.Clamp01(t)) * (1f - Mathf.Clamp01(t));
+                u.combatOffset = Vector2.Lerp(from, to, e);
+                HitStop(0.05f);
+                yield return null;
+            }
+            u.combatOffset = to;
         }
 
         static string FinisherWord(FinisherKind f)
