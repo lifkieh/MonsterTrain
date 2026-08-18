@@ -86,6 +86,15 @@ namespace MTA.Battle
         public void Launch(float strength) { if (_dead) return; _impulse += new Vector2(0f, strength); }
         public void Dodge(Vector2 dir) { if (_dead) return; _impulse += dir.normalized * 80f; _anim = Anim.Hit; _animTime = 0; _animDur = 0.24f; _animMag = 0.4f; }
         public void SetReserve(bool r) { _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f; }
+        public void SetElement(Color c)
+        {
+            if (_rt == null) return;
+            var go = new GameObject("Elem", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_rt, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(1, 1); rt.pivot = new Vector2(1, 1);
+            rt.sizeDelta = new Vector2(28, 28); rt.anchoredPosition = new Vector2(-6, -6);
+            var img = go.GetComponent<Image>(); img.color = c; img.raycastTarget = false;
+        }
         public void SetBasePos(Vector2 p) { _basePos = p; }
         public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse
 

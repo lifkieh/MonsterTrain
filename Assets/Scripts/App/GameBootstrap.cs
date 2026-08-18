@@ -43,6 +43,7 @@ namespace MTA.App
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
         Dictionary<string, AttackStyle> _atkStyles;
+        Dictionary<string, Color> _elemColors = new Dictionary<string, Color>();
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
         readonly List<Button> _speedButtons = new List<Button>();
 
@@ -61,6 +62,7 @@ namespace MTA.App
             _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
             _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
+            foreach (var s in _reg.All) _elemColors[s.speciesId] = UIFactory.ElementColor(s.element);
 
             // Meta progression: load or create the player profile.
             _hadSave = SaveSystem.Exists();
@@ -287,6 +289,15 @@ namespace MTA.App
             var m = _profile.Find(id);
             var tile = UIFactory.Panel(_collContent, "Tile", owned ? new Color(SpColor(id).r * 0.35f, SpColor(id).g * 0.35f, SpColor(id).b * 0.35f, 0.95f) : new Color(0.16f, 0.16f, 0.2f, 0.95f));
             tile.anchorMin = tile.anchorMax = new Vector2(0.5f, 0.5f); tile.sizeDelta = size; tile.anchoredPosition = pos;
+            if (seen)
+            {
+                // Rarity frame (top strip) + element badge (card-style identity).
+                var frame = UIFactory.Panel(tile, "Frame", RarityColor(MonsterMeta.Rarity(sp)));
+                frame.anchorMin = new Vector2(0, 1); frame.anchorMax = new Vector2(1, 1); frame.pivot = new Vector2(0.5f, 1);
+                frame.sizeDelta = new Vector2(0, 9); frame.anchoredPosition = Vector2.zero;
+                frame.GetComponent<Image>().raycastTarget = false;
+                UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 34, size.y / 2 - 34), 48, _font);
+            }
             if (seen) IconBadge(tile, id, new Vector2(0, 1), new Vector2(0, 1), new Vector2(12, -12), 64, 26);
             UIFactory.Label(tile, seen ? id : "???", 26, new Vector2(0, 30), new Vector2(size.x - 20, 46), _font);
             string state = owned ? "OWNED  Lv " + (m != null ? m.level : 1) : seen ? "SEEN" : "LOCKED";
@@ -342,9 +353,22 @@ namespace MTA.App
         string StatsBlock(SpeciesData sp, int lvl)
         {
             string L(string n, Stat s) => n + ":  " + Eff(sp, lvl, s) + "   (+" + Lg(sp, s) + "/lvl)   next: " + Eff(sp, lvl + 1, s);
-            return "Role: " + MonsterMeta.Role(sp) + "     Rarity " + MonsterMeta.Stars(MonsterMeta.Rarity(sp)) + "\n\n" +
+            return "Role: " + MonsterMeta.Role(sp) + "     Element: " + sp.element +
+                "     Rarity " + MonsterMeta.Stars(MonsterMeta.Rarity(sp)) + "\n\n" +
                 L("HP", Stat.HP) + "\n" + L("ATK", Stat.ATK) + "\n" + L("DEF", Stat.DEF) + "\n" +
                 L("SPD", Stat.SPD) + "\n" + L("INT", Stat.INT) + "\n" + L("LUCK", Stat.LUCK);
+        }
+
+        static Color RarityColor(int rarity)
+        {
+            switch (rarity)
+            {
+                case 5: return new Color(1f, 0.82f, 0.3f);    // gold
+                case 4: return new Color(0.72f, 0.45f, 0.95f); // purple
+                case 3: return new Color(0.35f, 0.6f, 0.95f);  // blue
+                case 2: return new Color(0.4f, 0.85f, 0.45f);  // green
+                default: return new Color(0.65f, 0.65f, 0.7f); // gray
+            }
         }
 
         void OnTrain()
@@ -662,6 +686,7 @@ namespace MTA.App
             var result = _ctrl.StartBattle();
             if (result == null) return;
             var replay = ReplayBuilder.Build(result, _slotMap);
+            _view.elementColors = _elemColors;            // element indicators on fighters
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

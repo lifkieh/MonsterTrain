@@ -30,6 +30,7 @@ namespace MTA.Battle
         readonly Dictionary<int, UnitView> _views = new Dictionary<int, UnitView>();
         readonly Dictionary<int, AttackStyle> _styleByKey = new Dictionary<int, AttackStyle>();
         readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
+        public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
         RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
         readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
@@ -88,6 +89,7 @@ namespace MTA.Battle
                 v.Build(_stage, Vector2.zero, size, teamColor, speciesColor,
                     u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font);
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
+                if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
                 int k = Key(u.team, u.slot);
                 _views[k] = v;
                 _speciesByKey[k] = u.speciesId;
