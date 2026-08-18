@@ -331,7 +331,7 @@ namespace MTA.Battle
                 target.Dodge(new Vector2(-dir.x, 0.3f));
                 _texts.Spawn(target.BasePos + new Vector2(0, 72), "DODGE", CDodge, 26);
                 AudioManager.Play(Sfx.Click);
-                HitStop(0.14f / sp0);
+                HitStop(0.16f / sp0 + 0.02f);   // keep the sim frozen through the dodge beat
                 yield return new WaitForSecondsRealtime(0.16f / sp0);
             }
 
@@ -353,7 +353,7 @@ namespace MTA.Battle
                 if (!last)
                 {
                     Shake(ult ? 5f : 2.5f);
-                    HitStop(0.02f / sp);                                      // light flow freeze between hits
+                    HitStop(step + 0.02f);                                    // hold the sim clock across the whole combo
                 }
                 else
                 {
