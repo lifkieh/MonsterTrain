@@ -277,7 +277,7 @@ namespace MTA.App
             if (_collSortRarity) list.Sort((a, b) => MonsterMeta.Rarity(_reg.Get(b)).CompareTo(MonsterMeta.Rarity(_reg.Get(a))));
             else list.Sort(System.StringComparer.Ordinal);
 
-            const int cols = 3; float tw = 330, th = 200, gx = 18, gy = 18;
+            const int cols = 3; float tw = 330, th = 176, gx = 18, gy = 14;   // fits 7 rows (21 dex) above BACK
             float x0 = -(cols - 1) * (tw + gx) / 2f, y0 = 540;
             for (int i = 0; i < list.Count; i++)
             {
@@ -425,7 +425,7 @@ namespace MTA.App
             _careerHeader.text = "Completion  " + Career.CompletionPercent(_profile) + "%" + (complete ? "    ALL CLEARED!" : "");
             for (int i = _careerContent.childCount - 1; i >= 0; i--) Destroy(_careerContent.GetChild(i).gameObject);
 
-            const int cols = 2; float bw = 496, bh = 150, gx = 20, gy = 18;
+            const int cols = 3; float bw = 336, bh = 130, gx = 16, gy = 14;   // 18 stages → 6 rows (fits above BACK)
             float x0 = -(cols - 1) * (bw + gx) / 2f, y0 = 560;
             for (int i = 0; i < _stages.Count; i++)
             {
@@ -613,18 +613,16 @@ namespace MTA.App
             UIFactory.Label(_select, "PICK 3 MONSTERS", 44, new Vector2(0, 760), new Vector2(1000, 80), _font);
             _selectCount = UIFactory.Label(_select, "0 / 3", 32, new Vector2(0, 690), new Vector2(600, 50), _font);
 
-            // 2-column grid of species buttons.
-            int cols = 2;
-            float cw = 460, ch = 120, gapx = 40, gapy = 24;
-            float x0 = -(cw + gapx) / 2f, y0 = 560;
+            // 3-column compact grid (fits the full roster without overflowing START).
+            int cols = 3;
+            float cw = 330, ch = 108, gapx = 18, gapy = 14;
+            float x0 = -(cols - 1) * (cw + gapx) / 2f, y0 = 560;
             for (int i = 0; i < pool.Count; i++)
             {
                 string id = pool[i];
-                var sp = _reg.Get(id);
                 int col = i % cols, row = i / cols;
                 var pos = new Vector2(x0 + col * (cw + gapx), y0 - row * (ch + gapy));
-                var b = UIFactory.Button(_select, "   " + id + "\n   HP" + sp.baseStats.hp + " ATK" + sp.baseStats.atk +
-                    " SPD" + sp.baseStats.spd, pos, new Vector2(cw, ch), _font, () => OnPickSpecies(id));
+                var b = UIFactory.Button(_select, "   " + id, pos, new Vector2(cw, ch), _font, () => OnPickSpecies(id));
                 DecorateCard(b, id);
                 _speciesButtons[id] = b;
             }

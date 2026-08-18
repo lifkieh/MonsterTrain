@@ -1,0 +1,25 @@
+{
+    "name": "MTA.PlayTests",
+    "rootNamespace": "MTA.PlayTests",
+    "references": [
+        "MTA.Core",
+        "MTA.Meta",
+        "MTA.Battle",
+        "MTA.Data",
+        "MTA.App",
+        "UnityEngine.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
