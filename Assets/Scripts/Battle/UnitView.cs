@@ -15,8 +15,8 @@ namespace MTA.Battle
         const float FOOT = 108f;       // sprite center -> ground line (feet) offset
         const float MAX_JUMP = 300f;   // launch height at which the shadow is smallest
 
-        Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup;
-        RectTransform _rt, _artRt, _shadowRt; Text _name;
+        Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
+        RectTransform _rt, _artRt, _shadowRt, _barsRt; Text _name;
         Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
@@ -84,9 +84,15 @@ namespace MTA.Battle
             }
             _artGroup = _artRt.gameObject.AddComponent<CanvasGroup>();
 
+            // Bars container (HP + name + element dot) — fades out on KO so the HP bar despawns.
+            var bars = new GameObject("Bars", typeof(RectTransform));
+            _barsRt = bars.GetComponent<RectTransform>(); _barsRt.SetParent(_rt, false);
+            _barsRt.anchorMin = Vector2.zero; _barsRt.anchorMax = Vector2.one; _barsRt.offsetMin = Vector2.zero; _barsRt.offsetMax = Vector2.zero;
+            _barGroup = bars.AddComponent<CanvasGroup>();
+
             // Floating HP bar above the head.
             var bg = new GameObject("HpBg", typeof(RectTransform), typeof(Image));
-            var bgrt = bg.GetComponent<RectTransform>(); bgrt.SetParent(_rt, false);
+            var bgrt = bg.GetComponent<RectTransform>(); bgrt.SetParent(_barsRt, false);
             bgrt.anchorMin = bgrt.anchorMax = new Vector2(0.5f, 0.5f);
             bgrt.sizeDelta = new Vector2(148, 14); bgrt.anchoredPosition = new Vector2(0, ART * 0.5f + 22f);
             bg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f); bg.GetComponent<Image>().raycastTarget = false;
@@ -95,7 +101,7 @@ namespace MTA.Battle
 
             // Small floating name above the HP bar.
             var np = new GameObject("Name", typeof(RectTransform));
-            var nprt = np.GetComponent<RectTransform>(); nprt.SetParent(_rt, false);
+            var nprt = np.GetComponent<RectTransform>(); nprt.SetParent(_barsRt, false);
             nprt.anchorMin = nprt.anchorMax = new Vector2(0.5f, 0.5f);
             nprt.sizeDelta = new Vector2(240, 30); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 46f);
             _name = MakeText(nprt, font, displayName, 20, Vector2.zero, TextAnchor.MiddleCenter);
@@ -133,7 +139,7 @@ namespace MTA.Battle
         {
             if (_rt == null) return;
             var go = new GameObject("Elem", typeof(RectTransform), typeof(Image));
-            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_rt, false);
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_barsRt != null ? _barsRt : _rt, false);
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.sizeDelta = new Vector2(20, 20); rt.anchoredPosition = new Vector2(-86, ART * 0.5f + 22f);
             var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Disc(); img.color = c; img.raycastTarget = false;
@@ -165,8 +171,9 @@ namespace MTA.Battle
                 Vector2 pos = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
                 _rt.anchoredPosition = pos;
                 _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
-                _rt.localRotation = Quaternion.Euler(0, 0, _knock.x * 25f * p);
+                _rt.localRotation = Quaternion.Euler(0, 0, (_knock.x >= 0f ? 1f : -1f) * 210f * p);   // launched spin
                 if (_artGroup != null) _artGroup.alpha = (1f - p) * _reserveDim;      // dissolve
+                if (_barGroup != null) _barGroup.alpha = 1f - p;                      // HP bar despawns
                 if (_flash != null) _flash.color = new Color(0.05f, 0.05f, 0.08f, p * 0.7f);
                 UpdateShadow(pos, spawnScale, (1f - p));
                 return;
