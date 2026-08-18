@@ -59,7 +59,11 @@ namespace MTA.Battle
             switch (m)
             {
                 case Music.Menu: return Loop("menu", 80, new[] { 0, 4, 7, 12 }, minor: false, drive: 0.35f, dur: 7.2f);
-                case Music.Battle: return Loop("battle", 128, new[] { 0, 3, 7, 10 }, minor: true, drive: 0.7f, dur: 3.75f);
+                case Music.Battle:
+                {
+                    var real = Resources.Load<AudioClip>("Audio/music_battle");   // CC0 downloaded track
+                    return real != null ? real : Loop("battle", 128, new[] { 0, 3, 7, 10 }, minor: true, drive: 0.7f, dur: 3.75f);
+                }
                 case Music.Boss: return Loop("boss", 150, new[] { 0, 3, 6, 10 }, minor: true, drive: 0.9f, dur: 3.2f);
                 case Music.Victory: return Loop("victory_m", 120, new[] { 0, 4, 7, 12 }, minor: false, drive: 0.6f, dur: 4f);
                 default: return Loop("defeat_m", 66, new[] { 0, 3, 7, 8 }, minor: true, drive: 0.3f, dur: 5.4f);
@@ -128,10 +132,22 @@ namespace MTA.Battle
             SfxVolume = PlayerPrefs.GetFloat(KSfx, 0.9f);
             UiVolume = PlayerPrefs.GetFloat(KUi, 0.9f);
             foreach (Sfx id in Enum.GetValues(typeof(Sfx))) _clips[id] = SfxLibrary.Generate(id);
+            // Override key combat SFX with real CC0 creature sounds if present.
+            OverrideSfx(Sfx.Hit, "Audio/sfx_bug_02");
+            OverrideSfx(Sfx.Crit, "Audio/sfx_roar_01");
+            OverrideSfx(Sfx.Ultimate, "Audio/sfx_roar_01");
+            OverrideSfx(Sfx.Death, "Audio/sfx_burble_01");
+            OverrideSfx(Sfx.Heal, "Audio/sfx_cute_03");
             _pool = new AudioSource[8];
             for (int i = 0; i < _pool.Length; i++) { _pool[i] = gameObject.AddComponent<AudioSource>(); _pool[i].playOnAwake = false; }
             _musicA = gameObject.AddComponent<AudioSource>(); _musicB = gameObject.AddComponent<AudioSource>();
             _musicA.loop = _musicB.loop = true; _musicA.playOnAwake = _musicB.playOnAwake = false;
+        }
+
+        void OverrideSfx(Sfx id, string resourcePath)
+        {
+            var c = Resources.Load<AudioClip>(resourcePath);
+            if (c != null) _clips[id] = c;
         }
 
         // ---- volume persistence ----

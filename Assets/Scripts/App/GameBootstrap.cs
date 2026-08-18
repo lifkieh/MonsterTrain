@@ -236,7 +236,7 @@ namespace MTA.App
                     var msp = _reg.Get(d.mvpSpecies);
                     if (msp != null)
                     {
-                        var art = MTA.Battle.MonsterArt.Build(_mvpHolder, d.mvpSpecies, msp.element, MonsterMeta.Role(msp).ToString(), 120);
+                        var art = Portrait(_mvpHolder, d.mvpSpecies, msp, 130);
                         art.anchoredPosition = new Vector2(-300, 0);
                     }
                     UIFactory.Label(_mvpHolder, "MVP:  " + d.mvpSpecies + "  (" + (d.mvpTeam == 0 ? "You" : "Enemy") + ")",
@@ -297,7 +297,17 @@ namespace MTA.App
             srt.anchorMin = new Vector2(0, 0); srt.anchorMax = new Vector2(0, 1); srt.pivot = new Vector2(0, 0.5f);
             srt.sizeDelta = new Vector2(16, 0); srt.anchoredPosition = Vector2.zero;
             var si = strip.GetComponent<Image>(); si.color = col; si.raycastTarget = false;
-            IconBadge(rt, id, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(40, 0), 72, 30);
+            // Real monster portrait on the card (procedural/initial fallback).
+            var sprite = MTA.Battle.MonsterVisual.For(id, false);
+            if (sprite != null)
+            {
+                var pgo = new GameObject("Portrait", typeof(RectTransform), typeof(Image));
+                var prt = pgo.GetComponent<RectTransform>(); prt.SetParent(rt, false);
+                prt.anchorMin = prt.anchorMax = new Vector2(0, 0.5f); prt.pivot = new Vector2(0, 0.5f);
+                prt.sizeDelta = new Vector2(88, 88); prt.anchoredPosition = new Vector2(20, 0);
+                var pi = pgo.GetComponent<Image>(); pi.sprite = sprite; pi.preserveAspect = true; pi.raycastTarget = false;
+            }
+            else IconBadge(rt, id, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(40, 0), 72, 30);
         }
 
         void IconBadge(RectTransform parent, string id, Vector2 amin, Vector2 amax, Vector2 pos, float sz, int fs)
@@ -378,6 +388,22 @@ namespace MTA.App
             }
         }
 
+        // Real monster sprite (front) with procedural fallback.
+        RectTransform Portrait(RectTransform parent, string id, SpeciesData sp, float size)
+        {
+            var sprite = MTA.Battle.MonsterVisual.For(id, false);
+            if (sprite != null)
+            {
+                var go = new GameObject("Portrait", typeof(RectTransform), typeof(Image));
+                var rt = go.GetComponent<RectTransform>(); rt.SetParent(parent, false);
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = new Vector2(size, size);
+                var img = go.GetComponent<Image>(); img.sprite = sprite; img.preserveAspect = true; img.raycastTarget = false;
+                return rt;
+            }
+            return MTA.Battle.MonsterArt.Build(parent, id, sp != null ? sp.element : "",
+                sp != null ? MonsterMeta.Role(sp).ToString() : "Bruiser", size);
+        }
+
         void BuildTile(string id, Vector2 pos, Vector2 size)
         {
             var sp = _reg.Get(id);
@@ -392,7 +418,7 @@ namespace MTA.App
                 frame.anchorMin = new Vector2(0, 1); frame.anchorMax = new Vector2(1, 1); frame.pivot = new Vector2(0.5f, 1);
                 frame.sizeDelta = new Vector2(0, 9); frame.anchoredPosition = Vector2.zero;
                 frame.GetComponent<Image>().raycastTarget = false;
-                var art = MTA.Battle.MonsterArt.Build(tile, id, sp.element, MonsterMeta.Role(sp).ToString(), Mathf.Min(size.x, size.y) * 0.62f);
+                var art = Portrait(tile, id, sp, Mathf.Min(size.x, size.y) * 0.72f);
                 art.anchoredPosition = new Vector2(0, 22);
                 UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 32, size.y / 2 - 32), 46, _font);
                 UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 22, new Vector2(0, -34), new Vector2(size.x - 20, 30), _font).color = new Color(1f, 0.85f, 0.3f);
@@ -465,7 +491,7 @@ namespace MTA.App
             if (_detailArt != null)
             {
                 for (int i = _detailArt.childCount - 1; i >= 0; i--) Destroy(_detailArt.GetChild(i).gameObject);
-                MTA.Battle.MonsterArt.Build(_detailArt, id, sp.element, MonsterMeta.Role(sp).ToString(), 160);
+                Portrait(_detailArt, id, sp, 170);
             }
             int next = Progression.MonsterXpForNext(m.level);
             _detailXpFill.fillAmount = m.level >= Progression.MaxLevel ? 1f : Mathf.Clamp01((float)m.xp / next);

@@ -102,7 +102,7 @@ namespace MTA.Battle
                 string elem = elementNames != null && elementNames.TryGetValue(u.speciesId, out var en) ? en : "";
                 string role = roleNames != null && roleNames.TryGetValue(u.speciesId, out var rn) ? rn : "Bruiser";
                 v.Build(_stage, Vector2.zero, size, teamColor, speciesColor,
-                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font, elem, role);
+                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font, elem, role, u.team == 0);
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
                 int k = Key(u.team, u.slot);
@@ -191,11 +191,12 @@ namespace MTA.Battle
 
         // ---- Fighting-game staging: front-most alive = active (centered, big),
         //      the rest wait behind (small, dim). On a death the next runs in. ----
-        static Vector2 ActiveAnchor(int team) => new Vector2(team == 0 ? -250f : 250f, -40f);
+        static Vector2 ActiveAnchor(int team) => new Vector2(team == 0 ? -250f : 250f, -30f);
+        // Reserves wait fully OFF-SCREEN (1v1 framing); the next runs in on a death.
         static Vector2 ReserveAnchor(int team, int rank)
         {
             float side = team == 0 ? -1f : 1f;
-            return new Vector2(side * (470f + (rank - 1) * 80f), 250f + (rank - 1) * 70f);
+            return new Vector2(side * (820f + (rank - 1) * 60f), -30f);
         }
 
         void RelayoutTeam(int team, bool animate)

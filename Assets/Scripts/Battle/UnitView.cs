@@ -23,7 +23,7 @@ namespace MTA.Battle
 
         public void Build(RectTransform parent, Vector2 anchoredPos, Vector2 size,
             Color teamColor, Color speciesColor, string name, string initial, Font font,
-            string element = "", string role = "Bruiser")
+            string element = "", string role = "Bruiser", bool playerSide = false)
         {
             var go = new GameObject("Unit_" + name, typeof(RectTransform), typeof(Image));
             _rt = go.GetComponent<RectTransform>(); _rt.SetParent(parent, false);
@@ -38,8 +38,22 @@ namespace MTA.Battle
             var innerImg = inner.GetComponent<Image>(); innerImg.sprite = ProceduralArt.RoundedRect();
             innerImg.color = new Color(speciesColor.r * 0.2f, speciesColor.g * 0.2f, speciesColor.b * 0.26f, 0.95f);
 
-            var art = MonsterArt.Build(brt, name, element, role, Mathf.Min(size.x, size.y) * 0.82f);
-            _artGroup = art.gameObject.AddComponent<CanvasGroup>();
+            // Real downloaded sprite (Pokemon-style front/back); procedural fallback.
+            var sprite = MonsterVisual.For(name, playerSide);
+            RectTransform artRt;
+            if (sprite != null)
+            {
+                var sgo = new GameObject("Sprite", typeof(RectTransform), typeof(Image));
+                artRt = sgo.GetComponent<RectTransform>(); artRt.SetParent(brt, false);
+                artRt.anchorMin = artRt.anchorMax = new Vector2(0.5f, 0.5f);
+                float s = Mathf.Min(size.x, size.y) * 0.95f; artRt.sizeDelta = new Vector2(s, s);
+                var simg = sgo.GetComponent<Image>(); simg.sprite = sprite; simg.preserveAspect = true; simg.raycastTarget = false;
+            }
+            else
+            {
+                artRt = MonsterArt.Build(brt, name, element, role, Mathf.Min(size.x, size.y) * 0.82f);
+            }
+            _artGroup = artRt.gameObject.AddComponent<CanvasGroup>();
 
             var flashGo = new GameObject("Flash", typeof(RectTransform), typeof(Image));
             var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(brt, false);
