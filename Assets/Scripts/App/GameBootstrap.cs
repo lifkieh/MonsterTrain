@@ -413,11 +413,25 @@ namespace MTA.App
             tile.anchorMin = tile.anchorMax = new Vector2(0.5f, 0.5f); tile.sizeDelta = size; tile.anchoredPosition = pos;
             if (seen)
             {
-                // Rarity frame (top strip) + element badge + procedural portrait.
-                var frame = UIFactory.Panel(tile, "Frame", RarityColor(MonsterMeta.Rarity(sp)));
-                frame.anchorMin = new Vector2(0, 1); frame.anchorMax = new Vector2(1, 1); frame.pivot = new Vector2(0.5f, 1);
-                frame.sizeDelta = new Vector2(0, 9); frame.anchoredPosition = Vector2.zero;
-                frame.GetComponent<Image>().raycastTarget = false;
+                // Rarity border — real CC0 9-slice frame (top-strip fallback) + element badge + portrait.
+                var rc = RarityColor(MonsterMeta.Rarity(sp));
+                var fsprite = UIFactory.UiSprite("frame");
+                if (fsprite != null)
+                {
+                    var fgo = new GameObject("RarityFrame", typeof(RectTransform), typeof(Image));
+                    var frt = fgo.GetComponent<RectTransform>(); frt.SetParent(tile, false);
+                    frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
+                    var fimg = fgo.GetComponent<Image>(); fimg.sprite = fsprite; fimg.type = Image.Type.Sliced;
+                    fimg.pixelsPerUnitMultiplier = 3f; fimg.color = rc; fimg.raycastTarget = false;
+                    frt.SetAsLastSibling();
+                }
+                else
+                {
+                    var frame = UIFactory.Panel(tile, "Frame", rc);
+                    frame.anchorMin = new Vector2(0, 1); frame.anchorMax = new Vector2(1, 1); frame.pivot = new Vector2(0.5f, 1);
+                    frame.sizeDelta = new Vector2(0, 9); frame.anchoredPosition = Vector2.zero;
+                    frame.GetComponent<Image>().raycastTarget = false;
+                }
                 var art = Portrait(tile, id, sp, Mathf.Min(size.x, size.y) * 0.72f);
                 art.anchoredPosition = new Vector2(0, 22);
                 UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 32, size.y / 2 - 32), 46, _font);

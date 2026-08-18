@@ -59,6 +59,9 @@ namespace MTA.App
             rt.sizeDelta = size;
             rt.anchoredPosition = pos;
             var img = go.GetComponent<Image>(); img.color = new Color(0.2f, 0.55f, 0.95f);
+            // Real CC0 Kenney 9-slice button sprite (procedural fallback keeps a gloss child).
+            var btn = UiSprite("btn");
+            if (btn != null) { img.sprite = btn; img.type = Image.Type.Sliced; img.pixelsPerUnitMultiplier = 2.4f; }
             var b = go.GetComponent<Button>();
             // Modern press feedback: tint on hover/press instead of a static block.
             b.transition = Selectable.Transition.ColorTint;
@@ -70,12 +73,15 @@ namespace MTA.App
             cb.fadeDuration = 0.08f;
             b.colors = cb;
 
-            // Glossy top highlight for a little depth.
-            var gloss = new GameObject("Gloss", typeof(RectTransform), typeof(Image));
-            var grt = gloss.GetComponent<RectTransform>(); grt.SetParent(rt, false);
-            grt.anchorMin = new Vector2(0, 0.55f); grt.anchorMax = new Vector2(1, 1);
-            grt.offsetMin = new Vector2(3, 0); grt.offsetMax = new Vector2(-3, -3);
-            var gi = gloss.GetComponent<Image>(); gi.color = new Color(1f, 1f, 1f, 0.07f); gi.raycastTarget = false;
+            if (btn == null)
+            {
+                // Fallback glossy top highlight when no real button sprite.
+                var gloss = new GameObject("Gloss", typeof(RectTransform), typeof(Image));
+                var grt = gloss.GetComponent<RectTransform>(); grt.SetParent(rt, false);
+                grt.anchorMin = new Vector2(0, 0.55f); grt.anchorMax = new Vector2(1, 1);
+                grt.offsetMin = new Vector2(3, 0); grt.offsetMax = new Vector2(-3, -3);
+                var gi = gloss.GetComponent<Image>(); gi.color = new Color(1f, 1f, 1f, 0.07f); gi.raycastTarget = false;
+            }
 
             var punch = go.AddComponent<ButtonPunch>();
             b.onClick.AddListener(punch.Punch);
@@ -88,6 +94,14 @@ namespace MTA.App
         public static void SetButtonColor(Button b, Color c)
         {
             if (b != null) b.GetComponent<Image>().color = c;
+        }
+
+        // Cached CC0 Kenney UI sprites (Resources/Ui). Null → procedural fallback.
+        static Sprite _uiBtn, _uiPanel, _uiFrame; static bool _uiTried;
+        public static Sprite UiSprite(string n)
+        {
+            if (!_uiTried) { _uiTried = true; _uiBtn = Resources.Load<Sprite>("Ui/btn"); _uiPanel = Resources.Load<Sprite>("Ui/panel"); _uiFrame = Resources.Load<Sprite>("Ui/frame"); }
+            return n == "btn" ? _uiBtn : n == "panel" ? _uiPanel : _uiFrame;
         }
 
         // Minimal working slider (track + fill + round handle).

@@ -59,6 +59,16 @@ namespace MTA.App.EditorTools
                 ti.filterMode = FilterMode.Bilinear;
                 ti.alphaIsTransparency = true;
             }
+            else if (p.Contains("/Resources/Ui/"))
+            {
+                var ti = (TextureImporter)assetImporter;   // 9-slice UI sprites
+                ti.textureType = TextureImporterType.Sprite;
+                ti.spriteImportMode = SpriteImportMode.Single;
+                ti.filterMode = FilterMode.Bilinear;
+                ti.mipmapEnabled = false;
+                ti.spriteBorder = new Vector4(20, 20, 20, 20);
+                ti.alphaIsTransparency = true;
+            }
         }
     }
 }
