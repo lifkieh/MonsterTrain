@@ -13,6 +13,7 @@ namespace MTA.Battle
         Vector2 _basePos; Color _bodyColor;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
+        Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic: physics push + reserve staging
 
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
@@ -80,6 +81,14 @@ namespace MTA.Battle
         public void PlayHeal() { if (_dead) return; _anim = Anim.Heal; _animTime = 0; _animDur = 0.45f; }
         public void PlayDeath(Vector2 knock) { if (_dead) return; _dead = true; _victory = false; _deadTime = 0; _knock = knock; if (_name != null) _name.color = new Color(1, 1, 1, 0.5f); }
 
+        // --- Cinematic presentation (visual only) ---
+        public void Knock(Vector2 dir, float strength) { if (_dead) return; _impulse += dir.normalized * strength; }
+        public void Launch(float strength) { if (_dead) return; _impulse += new Vector2(0f, strength); }
+        public void Dodge(Vector2 dir) { if (_dead) return; _impulse += dir.normalized * 80f; _anim = Anim.Hit; _animTime = 0; _animDur = 0.24f; _animMag = 0.4f; }
+        public void SetReserve(bool r) { _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f; }
+        public void SetBasePos(Vector2 p) { _basePos = p; }
+        public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse
+
         void Update()
         {
             if (_rt == null) return;
@@ -91,13 +100,17 @@ namespace MTA.Battle
             if (_hpDelayed != null) _hpDelayed.fillAmount = _delayFrac;
 
             if (_spawnT < 1f) _spawnT = Mathf.Min(1f, _spawnT + dt / 0.3f);
-            float spawnScale = Mathf.SmoothStep(0.2f, 1f, _spawnT);
+            float spawnScale = Mathf.SmoothStep(0.2f, 1f, _spawnT) * _reserveScale;
+
+            // Cinematic impulse (knockback / launch / slide-in) decays toward rest.
+            _impulse = Vector2.Lerp(_impulse, Vector2.zero, 7f * dt);
+            if (_impulse.sqrMagnitude < 0.25f) _impulse = Vector2.zero;
 
             if (_dead)
             {
                 _deadTime += dt;
                 float p = Mathf.Clamp01(_deadTime / 0.7f);
-                _rt.anchoredPosition = _basePos + _knock * (60f * p) + new Vector2(0, -50f * p);
+                _rt.anchoredPosition = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
                 _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
                 _rt.localRotation = Quaternion.Euler(0, 0, _knock.x * 25f * p);
                 if (_body != null) _body.color = new Color(0.15f, 0.15f, 0.15f, (1f - p) * 0.85f);
@@ -133,10 +146,10 @@ namespace MTA.Battle
                 if (p >= 1f) _anim = Anim.None;
             }
 
-            _rt.anchoredPosition = _basePos + idle + animOff;
+            _rt.anchoredPosition = _basePos + idle + animOff + _impulse;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
             _rt.localRotation = Quaternion.identity;
-            if (_body != null) _body.color = bodyC;
+            if (_body != null) _body.color = new Color(bodyC.r, bodyC.g, bodyC.b, bodyC.a * _reserveDim);
         }
 
         static Text MakeText(RectTransform parent, Font font, string s, int size, Vector2 pos, TextAnchor anchor)
