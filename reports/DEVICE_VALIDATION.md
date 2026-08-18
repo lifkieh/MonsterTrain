@@ -1,51 +1,45 @@
-# Device Validation — Train Your Monster
+# Device Validation — Train Your Monster (Cinematic Replay)
 
-Date: 2026-08-18 · APK `Build/Android/TrainYourMonster.apk` (35.0 MB)
+Date: 2026-08-18 · APK `Build/Android/TrainYourMonster.apk` (48.3 MB, built 07:25 — Phase J + Polish 001)
 Package `com.trainyourmonster.game` · Version **0.1.0** (versionCode 1)
 
-## Result: PASS — installed, launched, ran 60 s with no crash
+## Result: PASS — cinematic battle installs, launches, renders, and runs crash-free
 
-Device: **Samsung SM-S731B** (serial RRCY900K2TH) · Android **16** (SDK 36) · **arm64-v8a**.
+Device: **Samsung SM-S731B** (RRCY900K2TH) · Android **16** (SDK 36) · **arm64-v8a** · 1080×2340.
 
 ## Steps performed
-1. **adb available** — YES. Unity-bundled `platform-tools\adb.exe`, ADB 1.0.41 (36.0.0-13206524). (Not on PATH; full path used.)
-2. **Device detected** — `adb devices`: `RRCY900K2TH  device` (authorized). (First poll found none; device connected on retry.)
-3. **Install** — `adb install -r -g` → **Success** (streamed install). Runtime package: versionName `0.1.0`, versionCode `1`, targetSdk 36.
-4. **Launch** — resolved `com.trainyourmonster.game/com.unity3d.player.UnityPlayerGameActivity`, `am start -W`:
-   - Status: `ok` · LaunchState: `COLD`
-   - **TotalTime: 323 ms** · WaitTime: 327 ms (OS time-to-first-frame).
-   - Unity native game loop began ~200 ms into process start; surface up ~50 ms later.
-5. **Logcat** — 60 s captured (~20,400 lines). App stayed alive the whole window.
-6. **Post-run state** — pid unchanged (29523), `mCurrentFocus` = the game's activity → **foreground, running, not crashed**.
+1. **Install** — `adb install -r -g` → **Success** (streamed). Runtime version 0.1.0 (code 1).
+2. **Launch** — `am start -W` on `UnityPlayerGameActivity`: Status ok, **COLD, TotalTime 508 ms**.
+3. **UI render check (screenshots)**
+   - **Main menu** — all 8 buttons (PLAY / CAREER / DAILY / CONTINUE / PROGRESS / COLLECTION / SETTINGS / QUIT) + `v0.1.0`, well spaced, no overlap.
+   - **About page** — title, version, package id, credits (Design & Code: Lifkie Lie), engine version — all crisp and correctly laid out.
+4. **Cinematic battle (the Phase J deliverable) — verified on-screen:**
+   - **Procedural arena** rendered: gradient sky, parallax mountain silhouettes, ground + floor line.
+   - **Fighting-game 1v1 staging** working: active fighters centered and full-size (**golem** vs **slime**), the reserve monsters (**host**, **golem**) parked behind, smaller and dimmed.
+   - **Knockback / launch** animation captured mid-flight (a defeated fighter's card rotating away off the arena).
+   - HP bars, nameplates, team-colored frames (blue player / red enemy) all rendering.
+5. **Logcat scan (battle window ~07:29–07:30)** — the cinematic code path (combos, coroutines, arena, knockback) ran with:
+   - **No FATAL / AndroidRuntime**, no ANR, no tombstone, no SIGSEGV.
+   - **No C# exceptions** (no NullReferenceException etc.) from the cinematic system.
+6. **Liveness** — app process stayed alive throughout (`pidof` unchanged); no crash.
 
-## Startup / version (launch success)
-- **Package version:** 0.1.0 (code 1).
-- **Startup time:** 323 ms cold (OS-reported); interactive within ~1 s.
-- **Rendering:** GameActivity surface + `BLASTBufferQueue` created, SwappyDisplayManager frame pacing active. No GL/Vulkan/shader errors. `libgame.so` / `libmain.so` loaded OK by nativeloader.
+## Startup / version
+- Package version 0.1.0 (code 1). Cold start 508 ms.
 
-## Crash / exception / ANR scan
-- **FATAL / AndroidRuntime:** none.
-- **ANR / "not responding":** none.
-- **SIGSEGV / tombstone / abort:** none.
-- App process (pid 29523) survived the full 60 s and remained foreground.
+## Non-fatal log noise (app pid, benign — unchanged from prior runs)
+- `E/Unity ClassNotFoundException … AssetPackManager` (no asset packs used).
+- `E/SwappyDisplayManager … couldn't find "libgame.so"` (frame-pacer probe; lib already loaded).
+- `E/ashmem Pinning is deprecated`.
+- `E/System Uncaught exception thrown by finalizer` (ART GC dex-close race).
 
-### Non-fatal log noise (app pid, benign — no action required)
-| Line | Meaning | Impact |
-|------|---------|--------|
-| `E/Unity ClassNotFoundException … AssetPackManager` | Play Asset Delivery class absent (app bundles no asset packs) | none — app doesn't use it; same as prior sessions |
-| `E/SwappyDisplayManager … couldn't find "libgame.so"` | Swappy frame-pacer probing via a class loader without the native path (the lib is already loaded elsewhere) | none — cosmetic probe log |
-| `E/ashmem Pinning is deprecated since Android Q` | Unity internal ashmem usage | none |
-| `E/System Uncaught exception thrown by finalizer: Failed to close dex file` | ART GC finalizer race closing an in-memory dex | none — non-fatal, common on ART |
+None fatal; none from game code.
 
-The `E/ActivityManager` broadcast exceptions in the buffer come from Samsung
-system-server (pid 1404, `CloBigDataManager`), not from this app.
-
-## Notes
-- APK is debug-signed (development build); fine for sideload validation, not Play Store.
-- Only functional/runtime validation here; on-screen **visual** QA (layout, colors,
-  touch targets across the new Career/Daily/Settings screens) still wants a human eye.
+## Notes / caveats
+- During the session the app was once sent to the home screen (backgrounded) between captures; the process stayed alive (not a crash). At teardown the device dropped off ADB (USB), so end-of-session focus/screenshot were not re-captured — after the crash-free battle window was already recorded.
+- Debug-signed development APK (sideload validation, not Play Store).
+- This confirms the cinematic replay renders and runs stably on hardware; full subjective "fight feel" tuning (combo timing, camera intensity) is still a human judgment pass.
 
 ## Verdict
-The latest release-candidate APK installs cleanly, launches cold in 323 ms, and
-runs stable for 60 s with no crash, ANR, or fatal error on Android 16 / arm64.
-Only known-benign log noise. **On-device runtime validation: PASS.**
+The Phase J + Polish cinematic replay APK installs, launches cold in ~0.5 s, and
+renders the fighting-game battle (arena, 1v1 staging, reserves, knockback) with
+**no crash and no exceptions** on Android 16 / arm64. **On-device validation: PASS.**
