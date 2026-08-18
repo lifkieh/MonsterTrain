@@ -36,7 +36,17 @@ namespace MTA.Battle
         readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
         readonly HashSet<int> _busyUnits = new HashSet<int>();   // units mid dash-choreography
         bool _spotlightBusy;                                     // single-cinematic-at-a-time invariant
+        int _spotlightTargetKey = -1;
         float _freezeBudget;
+
+        // --- Tawuran engagement (Phase O-2) ---
+        EngagementPlan _plan;
+        int _fillerQ;                    // next filler beat index
+        float _stageTime;                // real seconds since the fight started (opening charge)
+        bool _chargeClashed;
+        double _lastClashT = -1;
+        const float CHARGE_DUR = 1.15f;      // opening sprint-to-centre duration
+        const float CHARGE_CONTACT = 0.62f;  // when the two charges collide
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
@@ -84,9 +94,11 @@ namespace MTA.Battle
             _font = font; _root = parent; _replay = replay; _styleMap = styleMap; _rIdx = 0;
             _clock = 0; _playing = true; _finishedFired = false;
             _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f;
-            _spotlightBusy = false; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
+            _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
+            _stageTime = 0f; _chargeClashed = false; _fillerQ = 0; _lastClashT = -1;
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
+            _plan = EngagementPlanner.Plan(result, replay);               // tawuran engagement plan (seeded by logHash)
             AudioManager.PlayMusic(Music.Battle);
 
             // Auto-pace: 15–60 s window; close matches longer, stomps faster.
@@ -149,20 +161,9 @@ namespace MTA.Battle
                 _speciesByKey[k] = u.speciesId;
                 _styleByKey[k] = (_styleMap != null && _styleMap.TryGetValue(u.speciesId, out var st)) ? st : AttackStyle.MeleeLunge;
             }
-            IntroApproachAll();
             BuildHud();
-        }
-
-        // Every fighter rushes in from its own side edge to its formation slot.
-        void IntroApproachAll()
-        {
-            foreach (var u in _pb.Units)
-            {
-                var v = View(u.team, u.slot); if (v == null) continue;
-                var anchor = Formation(u.team, u.slot);
-                float far = u.team == 0 ? -980f : 980f;
-                v.EnterFrom(new Vector2(far, anchor.y), anchor);
-            }
+            // Units start in formation (set by Build); the opening charge in
+            // UpdateEngagement sprints both teams to the centre and they collide.
         }
 
         // Fighting-game round pips: player team left, enemy right, screen-fixed.
@@ -217,6 +218,7 @@ namespace MTA.Battle
         {
             if (_playing)
             {
+                _stageTime += Time.deltaTime;
                 if (_slowmoT > 0f) { _slowmoT -= Time.deltaTime; if (_slowmoT <= 0f) _slowmo = 1f; }
 
                 if (_hitstop > 0f)
@@ -228,10 +230,15 @@ namespace MTA.Battle
                     _clock += Time.deltaTime * _simPerReal * speedMultiplier * _slowmo;
                     while (_replay != null && _rIdx < _replay.Count && _replay[_rIdx].t <= _clock)
                     {
-                        Apply(_replay[_rIdx], _cho.beats[_rIdx]);
+                        Apply(_replay[_rIdx], _cho.beats[_rIdx], _rIdx);
                         _rIdx++;
                     }
+                    while (_plan != null && _fillerQ < _plan.fillers.Count && _plan.fillers[_fillerQ].t <= _clock)
+                    {
+                        PlayFiller(_plan.fillers[_fillerQ]); _fillerQ++;
+                    }
                     _pb.ProcessUpTo(_clock);
+                    UpdateEngagement();
                 }
 
                 foreach (var u in _pb.Units)
@@ -263,7 +270,7 @@ namespace MTA.Battle
             _styleByKey.TryGetValue(Key(team, slot), out var s) ? s : AttackStyle.MeleeLunge;
         Vector2 PosOf(int team, int slot) => View(team, slot) is UnitView v ? v.BasePos : Formation(team, slot);
 
-        void Apply(ReplayEvent e, ChoreoBeat b)
+        void Apply(ReplayEvent e, ChoreoBeat b, int idx)
         {
             switch (e.kind)
             {
@@ -305,8 +312,16 @@ namespace MTA.Battle
                     int tt = e.targetTeam, ts = e.targetSlot;
                     bool ranged = AttackStyles.IsRanged(st);
                     bool big = ult || b.crit || b.hits >= 3;
+                    bool clash = _plan != null && _plan.clashEventIdx.Contains(idx);
 
-                    if (ranged)
+                    if (ult && av != null) CrowdFlinch(Key(e.actorTeam, e.actorSlot), tt, ts, av.BasePos, 300f);
+
+                    if (clash)
+                    {
+                        if (_clock - _lastClashT > 0.18) { _lastClashT = _clock; ClashFlourish(e.actorTeam, e.actorSlot, tt, ts, dir); }
+                        CompactLunge(e.actorTeam, e.actorSlot, tt, ts, b);   // real damage number + knock inside the clash
+                    }
+                    else if (ranged)
                     {
                         Vector2 from = PosOf(e.actorTeam, e.actorSlot), to = PosOf(tt, ts);
                         av?.PlayAttack(dir, 26f, false);
@@ -316,6 +331,7 @@ namespace MTA.Battle
                     else if (big && !_spotlightBusy)
                     {
                         _spotlightBusy = true;                       // claim the single cinematic slot NOW
+                        _spotlightTargetKey = Key(tt, ts);
                         _zoomTarget = ult ? 1.14f : 1.05f;
                         StartCoroutine(SpotlightCombo(e.actorTeam, e.actorSlot, tt, ts, b, st, actorSp, ult));
                     }
@@ -347,6 +363,7 @@ namespace MTA.Battle
                         dv.Knock(knock, b.knockback); dv.Launch(b.endsBattle ? 170f : 130f);   // launch + spin + fade (no run-in)
                         dv.PlayDeath(knock);
                         _vfx.Play("explosion", dv.BasePos, b.endsBattle ? 340f : 240f, Color.white);
+                        CrowdFlinch(Key(e.targetTeam, e.targetSlot), -1, -1, dv.BasePos, 280f);   // scrum recoils from the KO
                     }
                     if (b.endsBattle)
                     {
@@ -455,7 +472,7 @@ namespace MTA.Battle
             }
             finally
             {
-                _spotlightBusy = false; _busyUnits.Remove(key);
+                _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Remove(key);
                 if (A != null) A.combatOffset = Vector2.zero;
             }
         }
@@ -557,6 +574,188 @@ namespace MTA.Battle
                 yield return null;
             }
             u.combatOffset = to;
+        }
+
+        // ---- Tawuran engagement: every frame push each unit's BasePos toward its live
+        // engagement anchor (near its planned opponent, drifting to centre, circling,
+        // kiting if ranged), with soft separation so bodies never stack. Because the
+        // dash/return coroutines return to BasePos, units stay tangled in the scrum
+        // instead of retreating to a formation line. Indexed loops = zero alloc. ----
+        void UpdateEngagement()
+        {
+            if (_plan == null) return;
+            float dt = Time.deltaTime;
+            bool charging = _stageTime < CHARGE_DUR;
+            if (!_chargeClashed && _stageTime >= CHARGE_CONTACT) { _chargeClashed = true; OpeningClash(); }
+
+            var units = _pb.Units;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (!u.Alive) continue;
+                int k = Key(u.team, u.slot);
+                if (_busyUnits.Contains(k) || k == _spotlightTargetKey) continue;   // don't disturb the cinematic
+                var v = View(u.team, u.slot); if (v == null || v.IsDead) continue;
+
+                Vector2 target = charging ? ChargeAnchor(u.team, u.slot) : EngageAnchor(u.team, u.slot, k);
+                float spd = charging ? 1700f : 540f;
+                v.SetBasePos(ClampArena(Vector2.MoveTowards(v.BasePos, target, spd * dt)));
+            }
+            if (!charging) Separate();
+        }
+
+        static Vector2 ChargeAnchor(int team, int slot)
+        {
+            float side = team == 0 ? -1f : 1f;
+            return new Vector2(side * (95f + slot * 10f), (slot - 1) * 92f);   // collide near centre, staggered
+        }
+
+        Vector2 EngageAnchor(int team, int slot, int k)
+        {
+            int oppKey = CurrentOpp(k);
+            var ov = ViewByKey(oppKey);
+            Vector2 oppPos = (ov != null && !ov.IsDead) ? ov.BasePos : new Vector2(0f, -20f);
+            float side = team == 0 ? -1f : 1f;
+            bool ranged = AttackStyles.IsRanged(StyleOf(team, slot));
+            float gap = ranged ? 300f : 150f;
+            float phase = _plan.idlePhase.TryGetValue(k, out var ph) ? ph : 0f;
+            float t = (float)_clock;
+
+            float tx = oppPos.x + side * gap;                 // stand on your own side of the opponent
+            float ty = oppPos.y;
+            tx += Mathf.Cos(t * 1.6f + phase) * 26f;          // circling / living idle
+            ty += Mathf.Sin(t * 1.9f + phase) * 20f;
+            tx = Mathf.Lerp(tx, 0f, 0.16f);                   // scrum drift toward centre
+            if (ranged && ov != null && !ov.IsDead && Mathf.Abs(ov.BasePos.x - tx) < 250f)
+                tx += side * 150f;                            // kite: back off when the enemy closes
+            return new Vector2(tx, ty);
+        }
+
+        int CurrentOpp(int k)
+        {
+            int opp = -1;
+            if (_plan.segments.TryGetValue(k, out var segs))
+            {
+                for (int i = 0; i < segs.Count; i++) if (_clock >= segs[i].t0 && _clock < segs[i].t1) { opp = segs[i].oppKey; break; }
+                if (opp < 0 && segs.Count > 0) opp = segs[segs.Count - 1].oppKey;
+            }
+            var ov = ViewByKey(opp);
+            if (ov == null || ov.IsDead) opp = NearestLivingEnemy(k / 100);   // redirect off a dead partner
+            return opp;
+        }
+
+        int NearestLivingEnemy(int myTeam)
+        {
+            var units = _pb.Units;
+            for (int i = 0; i < units.Count; i++)
+                if (units[i].team != myTeam && units[i].Alive) return Key(units[i].team, units[i].slot);
+            return -1;
+        }
+
+        UnitView ViewByKey(int key) => key < 0 ? null : View(key / 100, key % 100);
+
+        static Vector2 ClampArena(Vector2 p) =>
+            new Vector2(Mathf.Clamp(p.x, -470f, 470f), Mathf.Clamp(p.y, -230f, 205f));
+
+        // Soft separation so the tangle never collapses onto one pixel (rule 8).
+        void Separate()
+        {
+            const float minD = 135f;
+            var units = _pb.Units;
+            for (int i = 0; i < units.Count; i++)
+            {
+                if (!units[i].Alive) continue; int ki = Key(units[i].team, units[i].slot);
+                if (_busyUnits.Contains(ki) || ki == _spotlightTargetKey) continue;
+                var vi = View(units[i].team, units[i].slot); if (vi == null || vi.IsDead) continue;
+                for (int j = i + 1; j < units.Count; j++)
+                {
+                    if (!units[j].Alive) continue; int kj = Key(units[j].team, units[j].slot);
+                    if (_busyUnits.Contains(kj) || kj == _spotlightTargetKey) continue;
+                    var vj = View(units[j].team, units[j].slot); if (vj == null || vj.IsDead) continue;
+                    Vector2 d = vi.BasePos - vj.BasePos; float dist = d.magnitude;
+                    if (dist < minD && dist > 0.01f)
+                    {
+                        Vector2 push = d / dist * ((minD - dist) * 0.5f);
+                        vi.SetBasePos(ClampArena(vi.BasePos + push));
+                        vj.SetBasePos(ClampArena(vj.BasePos - push));
+                    }
+                }
+            }
+        }
+
+        void OpeningClash()
+        {
+            _vfx.Play("hit_big", new Vector2(0, -10), 300f, Color.white);
+            _vfx.Play("hit_impact", new Vector2(-70, 60), 200f, Color.white);
+            _vfx.Play("hit_impact", new Vector2(80, -80), 200f, Color.white);
+            StartCoroutine(Shockwave(new Vector2(0, -10), CCrit));
+            Shake(16f); FlashScreen(0.5f); ZoomPunch(0.05f); AudioManager.Play(Sfx.Crit);
+        }
+
+        // Non-damaging filler beat (whiff / block / shove). NEVER spawns a damage number,
+        // never moves HP, never white-flashes a hit — so real hits stay unmistakable.
+        void PlayFiller(FillerBeat fb)
+        {
+            var v = ViewByKey(fb.unitKey); if (v == null || v.IsDead) return;
+            int k = fb.unitKey;
+            if (_busyUnits.Contains(k) || k == _spotlightTargetKey) return;   // don't interrupt a cinematic
+            var ov = ViewByKey(fb.oppKey);
+            int at = k / 100;
+            Vector2 dir = new Vector2(at == 0 ? 1f : -1f, 0f);
+            switch (fb.kind)
+            {
+                case FillerKind.Whiff:
+                    v.PlayAttack(dir, 32f, false);
+                    _vfx.Play("speedlines", v.BasePos + dir * 40f, 120f, new Color(1f, 1f, 1f, 0.5f));
+                    AudioManager.Play(Sfx.Hover);
+                    break;
+                case FillerKind.Block:
+                    v.PlayAttack(dir, 24f, false);
+                    if (ov != null && !ov.IsDead)
+                    {
+                        Vector2 mid = Vector2.Lerp(v.BasePos, ov.BasePos, 0.5f);
+                        _vfx.Play("hit_small", mid, 110f, new Color(0.75f, 0.9f, 1f, 0.9f));   // blue block spark (distinct)
+                        ov.Knock(dir, 14f); v.Knock(-dir, 10f);                                 // tiny mutual pushback
+                    }
+                    AudioManager.Play(Sfx.Hover);
+                    break;
+                case FillerKind.Shove:
+                    v.PlayAttack(dir, 28f, false);
+                    if (ov != null && !ov.IsDead) { _vfx.Play("puff", ov.BasePos, 130f, new Color(1f, 1f, 1f, 0.7f)); ov.Knock(dir, 34f); }
+                    AudioManager.Play(Sfx.Hover);
+                    break;
+            }
+        }
+
+        // Clash: two units' real events target each other near-simultaneously → lunge, big
+        // spark + mini shockwave, mutual push-apart (damage still comes from the real events).
+        void ClashFlourish(int at, int as_, int tt, int ts, Vector2 dir)
+        {
+            var A = View(at, as_); var T = View(tt, ts);
+            if (A == null || T == null) return;
+            Vector2 mid = Vector2.Lerp(A.BasePos, T.BasePos, 0.5f);
+            A.Knock(dir, 55f); T.Knock(-dir, 55f);
+            _vfx.Play("hit_big", mid, 250f, Color.white);
+            StartCoroutine(Shockwave(mid, CCrit));
+            Shake(12f); FlashScreen(0.4f); ZoomPunch(0.04f); AudioManager.Play(Sfx.Crit);
+            _texts.Spawn(mid + new Vector2(0, 46), "CLASH", CCrit, 30);
+        }
+
+        // Nearby non-participants recoil from an ultimate/KO blast (rule 9).
+        void CrowdFlinch(int excludeKey, int tTeam, int tSlot, Vector2 blast, float radius)
+        {
+            int tKey = tTeam >= 0 ? Key(tTeam, tSlot) : -1;
+            var units = _pb.Units;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (!u.Alive) continue;
+                int k = Key(u.team, u.slot);
+                if (k == excludeKey || k == tKey || _busyUnits.Contains(k) || k == _spotlightTargetKey) continue;
+                var v = View(u.team, u.slot); if (v == null || v.IsDead) continue;
+                Vector2 d = v.BasePos - blast; float dist = d.magnitude;
+                if (dist < radius && dist > 0.01f) v.Knock(d / dist, Mathf.Lerp(70f, 18f, dist / radius));
+            }
         }
 
         static string FinisherWord(FinisherKind f)
