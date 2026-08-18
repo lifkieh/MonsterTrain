@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: bat
   displayName: Bat
+  element: Fire
   baseStats:
-    hp: 70
-    atk: 18
+    hp: 74
+    atk: 22
     def: 8
-    spd: 20
-    intel: 10
-    luck: 12
+    spd: 26
+    intel: 8
+    luck: 22
   growth:
     perStat:
     - d: 3

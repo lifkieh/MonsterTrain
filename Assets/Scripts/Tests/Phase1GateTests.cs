@@ -43,10 +43,10 @@ namespace MTA.Tests
         public void StatMath_MatchesSpecFormulas()
         {
             var c = Cfg();
-            Assert.AreEqual(0.5f, StatMath.Mitigation(50, c), 1e-4f);       // 1 - 50/100
-            Assert.AreEqual(0.2f, StatMath.AttacksPerSecond(10, c), 1e-4f); // SPD 10 -> 0.2
-            Assert.AreEqual(0.5f, StatMath.AttacksPerSecond(25, c), 1e-4f); // kink
-            Assert.AreEqual(0.65f, StatMath.AttacksPerSecond(40, c), 1e-4f);// brake beyond 25
+            Assert.AreEqual(1f - 50f / 110f, StatMath.Mitigation(50, c), 1e-4f); // k=60: 1 - 50/(50+60)
+            Assert.AreEqual(0.15f, StatMath.AttacksPerSecond(10, c), 1e-4f);     // linear 0.015/SPD
+            Assert.AreEqual(0.375f, StatMath.AttacksPerSecond(25, c), 1e-4f);
+            Assert.AreEqual(0.60f, StatMath.AttacksPerSecond(40, c), 1e-4f);
             Assert.AreEqual(0.30f, StatMath.CritChance(200, c), 1e-4f);     // capped
             Assert.AreEqual(1f, StatMath.StallMultiplier(74, c), 1e-4f);
             Assert.AreEqual(1.05f, StatMath.StallMultiplier(85.1, c), 1e-4f);

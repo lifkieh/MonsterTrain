@@ -14,12 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: goblin
   displayName: Goblin
+  element: Fire
   baseStats:
-    hp: 95
+    hp: 102
     atk: 21
-    def: 12
-    spd: 13
-    intel: 9
+    def: 16
+    spd: 19
+    intel: 8
     luck: 14
   growth:
     perStat:

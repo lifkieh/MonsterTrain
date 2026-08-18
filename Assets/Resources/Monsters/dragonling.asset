@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: dragonling
   displayName: Dragonling
+  element: Fire
   baseStats:
-    hp: 85
-    atk: 17
-    def: 12
-    spd: 10
-    intel: 16
-    luck: 8
+    hp: 96
+    atk: 14
+    def: 16
+    spd: 17
+    intel: 28
+    luck: 12
   growth:
     perStat:
     - d: 1

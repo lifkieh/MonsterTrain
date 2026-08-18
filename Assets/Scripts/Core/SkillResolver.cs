@@ -39,20 +39,29 @@ namespace MTA.Core
                     if (target == null) break;
 
                     float raw = actor.EffectiveStat(skill.scalingStat) * skill.powerMultiplier;
-                    bool crit = rng.NextDouble() <
-                                StatMath.CritChance(actor.EffectiveStat(Stat.LUCK), cfg);
-                    if (crit) raw *= cfg.critMultiplier;
 
+                    // Fixed 3-roll order per Damage (RNG contract): crit, dodge, variance.
+                    int atkLuck = actor.EffectiveStat(Stat.LUCK);
+                    int defLuck = target.EffectiveStat(Stat.LUCK);
+                    bool crit = rng.NextDouble() < StatMath.CritChance(atkLuck, cfg);
+                    bool dodged = rng.NextDouble() < StatMath.DodgeChance(atkLuck, defLuck, cfg);
+                    float varFactor = 1f + cfg.damageVariance * (float)(2.0 * rng.NextDouble() - 1.0);
+
+                    if (crit) raw *= cfg.critMultiplier;
                     float mitigated = raw
                         * StatMath.Mitigation(target.EffectiveStat(Stat.DEF), cfg)
-                        * StatMath.StallMultiplier(s.clock, cfg);
-                    int final = Math.Max(cfg.minDamage, StatMath.RoundStat(mitigated));
+                        * StatMath.StallMultiplier(s.clock, cfg)
+                        * StatMath.ElementMultiplier(actor.element, target.element, cfg)
+                        * varFactor
+                        * cfg.damageScale;
+                    int final = dodged ? 0 : Math.Max(cfg.minDamage, StatMath.RoundStat(mitigated));
 
                     target.currentHp = Math.Max(0, target.currentHp - final);
                     log.Add(new BattleEvent { t = s.clock, kind = "Action",
                         actorTeam = actor.team, actorSlot = actor.slot, skillId = skill.skillId,
                         targetTeam = target.team, targetSlot = target.slot,
-                        raw = StatMath.RoundStat(raw), final = final, crit = crit });
+                        raw = StatMath.RoundStat(raw), final = final, crit = crit,
+                        extra = dodged ? "dodge" : "" });
                     if (!target.Alive) killed.Add(target);
                     break;
                 }

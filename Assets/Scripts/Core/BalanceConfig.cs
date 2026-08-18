@@ -8,17 +8,28 @@ namespace MTA.Core
     public class BalanceConfig
     {
         // --- damage model ---
-        public int k = 50;                       // mitigation constant
+        public int k = 60;                       // mitigation constant (DEF/HP EHP-parity tuned)
         public float critPerLuck = 0.005f;       // chance per LUCK point
         public float critCap = 0.30f;
         public float critMultiplier = 1.5f;
         public int minDamage = 1;
+        public float damageScale = 0.62f;        // global damage pacing (uniform → parity-neutral)
 
-        // --- SPD -> attacks-per-second curve (the SPD-stacking brake) ---
-        public float apsPerSpdLow = 0.02f;
-        public int spdKink = 25;
-        public float apsPerSpdHigh = 0.01f;
-        public float apsCap = 1.0f;
+        // --- controlled combat variance (K-phase parity: no deterministic cliff) ---
+        public float damageVariance = 0.30f;     // +/- per-hit damage spread
+        public float dodgeBase = 0.06f;          // base evade chance
+        public float dodgePerLuck = 0.004f;      // per (defenderLUCK - attackerLUCK)
+        public float dodgeCap = 0.28f;
+        public float timingJitter = 0.45f;       // +/- initial action-time jitter (breaks first-strike snowball)
+        public float elementAdvantage = 0.04f;   // elemental-triangle damage swing (isolated matchup ~10–15%)
+
+        // --- SPD -> attacks-per-second curve. Linear-through-origin so ATK-heavy
+        //     and SPD-heavy equal budgets produce equal DPS (K-phase parity); a
+        //     high soft cap only bites at extreme SPD. ---
+        public float apsPerSpdLow = 0.015f;
+        public int spdKink = 200;                // effectively no kink in the normal SPD range
+        public float apsPerSpdHigh = 0.015f;
+        public float apsCap = 1.15f;
 
         // --- growth / progression ---
         public float[] tierMultipliers = { 0.6f, 0.8f, 1.0f, 1.25f, 1.5f }; // D,C,B,A,S

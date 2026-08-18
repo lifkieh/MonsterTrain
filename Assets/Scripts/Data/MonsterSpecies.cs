@@ -10,6 +10,7 @@ namespace MTA.Data
     {
         public string speciesId;                 // lowercase_snake — NEVER rename (save key)
         public string displayName;
+        public string element;                   // Fire / Water / Nature (elemental triangle)
         public StatBlock baseStats;              // level-1 values
         public GrowthProfile growth = new GrowthProfile();
         public SkillDefinition basicSkill;
@@ -22,6 +23,7 @@ namespace MTA.Data
         {
             speciesId = speciesId,
             displayName = displayName,
+            element = element,
             baseStats = baseStats,
             growth = growth.ToWeights(),
             basicSkill = basicSkill != null ? basicSkill.ToData() : null,

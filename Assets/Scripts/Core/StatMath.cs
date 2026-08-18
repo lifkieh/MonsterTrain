@@ -25,6 +25,31 @@ namespace MTA.Core
         public static float CritChance(int luck, BalanceConfig c) =>
             Math.Min(luck * c.critPerLuck, c.critCap);
 
+        // Evade chance: a defensive use of LUCK (attacker LUCK erodes it), so LUCK
+        // is a real two-sided stat and hits carry controlled miss variance.
+        public static float DodgeChance(int attackerLuck, int defenderLuck, BalanceConfig c)
+        {
+            float d = c.dodgeBase + (defenderLuck - attackerLuck) * c.dodgePerLuck;
+            return Math.Min(Math.Max(d, 0f), c.dodgeCap);
+        }
+
+        // Elemental triangle: Fire > Nature > Water > Fire. Advantage boosts damage,
+        // disadvantage reduces it symmetrically; same/none = neutral. Deterministic
+        // (no RNG), so it never touches the growth→crit→dodge→variance contract.
+        public static float ElementMultiplier(string attacker, string defender, BalanceConfig c)
+        {
+            if (string.IsNullOrEmpty(attacker) || string.IsNullOrEmpty(defender) || attacker == defender) return 1f;
+            bool adv = (attacker == "Fire" && defender == "Nature")
+                    || (attacker == "Nature" && defender == "Water")
+                    || (attacker == "Water" && defender == "Fire");
+            if (adv) return 1f + c.elementAdvantage;
+            bool dis = (defender == "Fire" && attacker == "Nature")
+                    || (defender == "Nature" && attacker == "Water")
+                    || (defender == "Water" && attacker == "Fire");
+            if (dis) return 1f / (1f + c.elementAdvantage);
+            return 1f;
+        }
+
         public static float StallMultiplier(double t, BalanceConfig c) =>
             t <= c.antiStallStart
                 ? 1f

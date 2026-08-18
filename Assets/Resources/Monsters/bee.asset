@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: bee
   displayName: Bee
+  element: Nature
   baseStats:
-    hp: 65
-    atk: 16
-    def: 7
-    spd: 22
-    intel: 12
-    luck: 9
+    hp: 94
+    atk: 20
+    def: 11
+    spd: 26
+    intel: 14
+    luck: 20
   growth:
     perStat:
     - d: 3
@@ -54,7 +55,7 @@ MonoBehaviour:
       a: 2
       s: 1
   basicSkill: {fileID: 11400000, guid: d3f51536a8d0b374db32c54ef0450c57, type: 2}
-  activeSkill: {fileID: 11400000, guid: 4afd1706cef7d9c48b337b259bf6d9b3, type: 2}
+  activeSkill: {fileID: 11400000, guid: 98973dfd699e19940930fcbb969ff964, type: 2}
   ultimateSkill: {fileID: 11400000, guid: 4b1e4b4e1224e81418ea0e7346f9a6d8, type: 2}
   portrait: {fileID: 0}
   battleSprite: {fileID: 0}

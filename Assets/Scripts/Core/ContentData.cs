@@ -28,6 +28,7 @@ namespace MTA.Core
     {
         public string speciesId;                 // lowercase_snake, append-only
         public string displayName;
+        public string element = "";              // Fire / Water / Nature (elemental triangle)
         public StatBlock baseStats;              // level-1 values
         public GrowthWeights growth;             // tendencies; instances roll grades
         public SkillData basicSkill, activeSkill, ultimateSkill;   // exactly 3

@@ -7,9 +7,10 @@ namespace MTA.Core
     // replays BattleResult.events and never computes outcomes. (conventions)
     //
     // RNG CONTRACT (single System.Random(seed), consumed in this exact order):
-    //   1. Growth rolls for team A units lacking growthOverride, slot order,
-    //      stat order 0..5; then team B likewise.
-    //   2. Crit rolls, one per Damage resolution, in resolution order.
+    //   1. Per unit, team A then B (slot order): growth rolls (0..5, skipped when
+    //      growthOverride is set) then ONE initial action-time jitter roll.
+    //   2. Per Damage resolution (resolution order): crit, dodge, variance — three
+    //      rolls, always consumed so the stream is stable regardless of outcome.
     //   3. Hard-resolve coin flip (only if everything else ties).
     public static class BattleSimulator
     {
@@ -102,12 +103,16 @@ namespace MTA.Core
                 {
                     team = teamId, slot = slot,
                     speciesId = species.speciesId, displayName = species.displayName,
+                    element = species.element,
                     stats = effective,
                     maxHp = Math.Max(1, effective.hp),
                     skills = new[] { species.basicSkill, species.activeSkill, species.ultimateSkill }
                 };
                 unit.currentHp = unit.maxHp;
-                unit.nextActionTime = StatMath.ActionInterval(unit.EffectiveStat(Stat.SPD), cfg);
+                // Initial action time carries a small jitter so raw SPD no longer
+                // guarantees the first strike (initiative-snowball brake).
+                double jitter = 1.0 + cfg.timingJitter * (2.0 * rng.NextDouble() - 1.0);
+                unit.nextActionTime = StatMath.ActionInterval(unit.EffectiveStat(Stat.SPD), cfg) * jitter;
                 // Fair, deterministic tie-break key: pure hash of seed+identity.
                 // Consumes NO rng, so the growth->crit->flip RNG contract is intact.
                 unit.initiativeKey = InitiativeKey(seed, teamId, slot, species.speciesId);

@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: mushroom_beast
   displayName: Mushroom Beast
+  element: Water
   baseStats:
-    hp: 110
-    atk: 12
-    def: 14
-    spd: 7
-    intel: 20
-    luck: 6
+    hp: 138
+    atk: 16
+    def: 23
+    spd: 13
+    intel: 34
+    luck: 12
   growth:
     perStat:
     - d: 1

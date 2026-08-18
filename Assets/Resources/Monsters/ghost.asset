@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: ghost
   displayName: Ghost
+  element: Water
   baseStats:
-    hp: 80
+    hp: 78
     atk: 8
-    def: 10
-    spd: 12
-    intel: 24
-    luck: 10
+    def: 11
+    spd: 20
+    intel: 25
+    luck: 18
   growth:
     perStat:
     - d: 2

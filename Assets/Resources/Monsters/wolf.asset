@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: wolf
   displayName: Wolf
+  element: Nature
   baseStats:
-    hp: 100
-    atk: 24
-    def: 12
-    spd: 14
-    intel: 6
-    luck: 8
+    hp: 104
+    atk: 22
+    def: 17
+    spd: 18
+    intel: 8
+    luck: 12
   growth:
     perStat:
     - d: 1

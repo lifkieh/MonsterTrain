@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: slime
   displayName: Slime
+  element: Water
   baseStats:
-    hp: 120
-    atk: 16
-    def: 18
-    spd: 8
-    intel: 10
-    luck: 6
+    hp: 130
+    atk: 21
+    def: 24
+    spd: 15
+    intel: 12
+    luck: 10
   growth:
     perStat:
     - d: 0
@@ -54,7 +55,7 @@ MonoBehaviour:
       a: 2
       s: 1
   basicSkill: {fileID: 11400000, guid: d3f51536a8d0b374db32c54ef0450c57, type: 2}
-  activeSkill: {fileID: 11400000, guid: 5c86b7cda6378f54da7f58cef743928f, type: 2}
+  activeSkill: {fileID: 11400000, guid: 98973dfd699e19940930fcbb969ff964, type: 2}
   ultimateSkill: {fileID: 11400000, guid: 2117df39f7530034aa71ae33aa6ca463, type: 2}
   portrait: {fileID: 0}
   battleSprite: {fileID: 0}

@@ -13,6 +13,7 @@ namespace MTA.Core
     {
         public int team, slot;                   // slot 1..3 stored as 0..2; slot 0 = front
         public string speciesId, displayName;
+        public string element = "";              // elemental triangle (Fire/Water/Nature)
         public StatBlock stats;                  // effective base (level+alloc+training)
         public int maxHp, currentHp;
         public SkillData[] skills;               // [basic, active, ultimate]

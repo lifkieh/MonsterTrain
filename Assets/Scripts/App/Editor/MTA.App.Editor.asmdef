@@ -2,7 +2,9 @@
     "name": "MTA.App.Editor",
     "rootNamespace": "MTA.App.Editor",
     "references": [
-        "MTA.App"
+        "MTA.App",
+        "MTA.Core",
+        "MTA.Data"
     ],
     "includePlatforms": [
         "Editor"

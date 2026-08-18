@@ -14,13 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: fire_lizard
   displayName: Fire Lizard
+  element: Fire
   baseStats:
-    hp: 90
-    atk: 18
-    def: 11
-    spd: 11
-    intel: 18
-    luck: 7
+    hp: 94
+    atk: 12
+    def: 15
+    spd: 15
+    intel: 26
+    luck: 12
   growth:
     perStat:
     - d: 2
