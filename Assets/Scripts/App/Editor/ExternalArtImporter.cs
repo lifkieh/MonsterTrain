@@ -25,11 +25,23 @@ namespace MTA.App.EditorTools
                 ti.textureCompression = TextureImporterCompression.Uncompressed;
                 ti.spritePixelsPerUnit = 64;
                 ti.alphaIsTransparency = true;
+                ForceRGBA32(ti);
                 ti.SaveAndReimport();
                 n++;
             }
             AssetDatabase.Refresh();
             Debug.Log("MTA: imported " + n + " monster sprites as Sprite.");
+        }
+
+        // Pin monster sprites to uncompressed RGBA32 on Android so 64px pixel art stays
+        // crisp with no block-compression artifacts on device (they're tiny — ~16 KB each).
+        internal static void ForceRGBA32(TextureImporter ti)
+        {
+            var ps = ti.GetPlatformTextureSettings("Android");
+            ps.overridden = true;
+            ps.format = TextureImporterFormat.RGBA32;
+            ps.textureCompression = TextureImporterCompression.Uncompressed;
+            ti.SetPlatformTextureSettings(ps);
         }
     }
 
@@ -49,6 +61,7 @@ namespace MTA.App.EditorTools
                 ti.textureCompression = TextureImporterCompression.Uncompressed;
                 ti.spritePixelsPerUnit = 64;
                 ti.alphaIsTransparency = true;
+                ExternalArtImporter.ForceRGBA32(ti);
             }
             else if (p.Contains("/Resources/Vfx/") || p.Contains("/Resources/Arena/"))
             {

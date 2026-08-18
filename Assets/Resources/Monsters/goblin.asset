@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: goblin
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
   speciesId: goblin
-  displayName: Goblin
+  displayName: Squire
   element: Fire
   baseStats:
     hp: 102

@@ -48,6 +48,7 @@ namespace MTA.App
         Dictionary<string, Color> _elemColors = new Dictionary<string, Color>();
         Dictionary<string, string> _elemNames = new Dictionary<string, string>();
         Dictionary<string, string> _roleNames = new Dictionary<string, string>();
+        Dictionary<string, string> _displayNames = new Dictionary<string, string>();
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
         readonly List<Button> _speedButtons = new List<Button>();
 
@@ -74,6 +75,7 @@ namespace MTA.App
                 _elemColors[s.speciesId] = UIFactory.ElementColor(s.element);
                 _elemNames[s.speciesId] = s.element;
                 _roleNames[s.speciesId] = MonsterMeta.Role(s).ToString();
+                _displayNames[s.speciesId] = !string.IsNullOrEmpty(s.displayName) ? s.displayName : Nice(s.speciesId);
             }
 
             // Meta progression: load or create the player profile.
@@ -174,7 +176,7 @@ namespace MTA.App
                 { string k = e.actorTeam + "_" + e.actorSlot; cnt.TryGetValue(k, out var c); cnt[k] = c + 1; }
             }
             int best = 0; string bk = "-";
-            foreach (var kv in cnt) if (kv.Value > best) { best = kv.Value; sp.TryGetValue(kv.Key, out var s); bk = (s ?? "?") + "  (" + best + " hits)"; }
+            foreach (var kv in cnt) if (kv.Value > best) { best = kv.Value; sp.TryGetValue(kv.Key, out var s); bk = Nice(s ?? "?") + "  (" + best + " hits)"; }
             return bk;
         }
 
@@ -239,7 +241,7 @@ namespace MTA.App
                         var art = Portrait(_mvpHolder, d.mvpSpecies, msp, 130);
                         art.anchoredPosition = new Vector2(-300, 0);
                     }
-                    UIFactory.Label(_mvpHolder, "MVP:  " + d.mvpSpecies + "  (" + (d.mvpTeam == 0 ? "You" : "Enemy") + ")",
+                    UIFactory.Label(_mvpHolder, "MVP:  " + Nice(d.mvpSpecies) + "  (" + (d.mvpTeam == 0 ? "You" : "Enemy") + ")",
                         34, new Vector2(40, 0), new Vector2(620, 130), _font);
                 }
             }
@@ -322,6 +324,21 @@ namespace MTA.App
             lbl.raycastTarget = false;
         }
 
+        // User-facing name for a species id: its displayName, never raw snake_case.
+        string Nice(string id)
+        {
+            var sp = _reg != null ? _reg.Get(id) : null;
+            return sp != null && !string.IsNullOrEmpty(sp.displayName) ? sp.displayName : Humanize(id);
+        }
+        static string Humanize(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return id;
+            var parts = id.Split('_');
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i].Length > 0) parts[i] = char.ToUpper(parts[i][0]) + parts[i].Substring(1);
+            return string.Join(" ", parts);
+        }
+
         void BuildProgress(Transform parent)
         {
             _progress = UIFactory.Panel(parent, "ProgressPanel", new Color(0.09f, 0.1f, 0.13f));
@@ -342,9 +359,9 @@ namespace MTA.App
             {
                 var m = d.Find(id);
                 if (d.IsUnlocked(id) && m != null)
-                    s += "  " + id + "   Lv " + m.level + "   (" + m.xp + "/" + Progression.MonsterXpForNext(m.level) + ")\n";
+                    s += "  " + Nice(id) + "   Lv " + m.level + "   (" + m.xp + "/" + Progression.MonsterXpForNext(m.level) + ")\n";
                 else
-                    s += "  [LOCKED]  " + id + "\n";
+                    s += "  [LOCKED]  " + Nice(id) + "\n";
             }
             _progressText.text = s;
         }
@@ -443,7 +460,7 @@ namespace MTA.App
                 siloRoot.anchoredPosition = new Vector2(0, 22);
                 siloRoot.gameObject.AddComponent<CanvasGroup>().alpha = 0.16f;   // dim locked silhouette
             }
-            UIFactory.Label(tile, seen ? id : "???", 24, new Vector2(0, -58), new Vector2(size.x - 16, 42), _font);
+            UIFactory.Label(tile, seen ? Nice(id) : "???", 24, new Vector2(0, -58), new Vector2(size.x - 16, 42), _font);
             string state = owned ? "Lv " + (m != null ? m.level : 1) : seen ? "SEEN" : "LOCKED";
             var stx = UIFactory.Label(tile, state, 20, new Vector2(0, -78), new Vector2(size.x - 16, 32), _font);
             stx.color = owned ? new Color(0.5f, 1f, 0.6f) : seen ? new Color(0.9f, 0.9f, 0.5f) : new Color(0.7f, 0.7f, 0.7f);
@@ -501,7 +518,7 @@ namespace MTA.App
             var id = _detailSpecies; if (string.IsNullOrEmpty(id)) return;
             var sp = _reg.Get(id);
             var m = _profile.Find(id) ?? new MonsterSave { speciesId = id, level = 1 };
-            _detailName.text = id + "    Lv " + m.level;
+            _detailName.text = Nice(id) + "    Lv " + m.level;
             if (_detailArt != null)
             {
                 for (int i = _detailArt.childCount - 1; i >= 0; i--) Destroy(_detailArt.GetChild(i).gameObject);
@@ -550,7 +567,7 @@ namespace MTA.App
             int gained = Progression.Train(_profile, _detailSpecies);
             if (gained < 0) { ShowPopup("NOT ENOUGH COINS", "Need " + Progression.TrainCost + " coins.\nWin battles to earn more."); return; }
             SaveSystem.Save(_profile);
-            if (gained > 0) { MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.LevelUp); var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", _detailSpecies + "  reached  Lv " + (m != null ? m.level : 1)); }
+            if (gained > 0) { MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.LevelUp); var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", Nice(_detailSpecies) + "  reached  Lv " + (m != null ? m.level : 1)); }
             RefreshDetail();
         }
 
@@ -800,7 +817,7 @@ namespace MTA.App
                 string id = pool[i];
                 int col = i % cols, row = i / cols;
                 var pos = new Vector2(x0 + col * (cw + gapx), y0 - row * (ch + gapy));
-                var b = UIFactory.Button(_select, "   " + id, pos, new Vector2(cw, ch), _font, () => OnPickSpecies(id));
+                var b = UIFactory.Button(_select, "   " + Nice(id), pos, new Vector2(cw, ch), _font, () => OnPickSpecies(id));
                 DecorateCard(b, id);
                 _speciesButtons[id] = b;
             }
@@ -890,6 +907,7 @@ namespace MTA.App
             var replay = ReplayBuilder.Build(result, _slotMap);
             _view.elementColors = _elemColors;            // element indicators on fighters
             _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
+            _view.displayNames = _displayNames;           // Title Case names over fighters
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

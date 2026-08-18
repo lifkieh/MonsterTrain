@@ -3,17 +3,24 @@ using UnityEngine.UI;
 
 namespace MTA.Battle
 {
-    // Procedural monster visual with per-species identity: team-colored frame,
-    // species-colored body, nameplate, icon badge. Animations: spawn pop, idle
-    // float+breathe, style dash attack, hit shake+flash, heal pulse, death
-    // knockback+fade+sink, victory bounce. Smooth + delayed HP bar. Renders only.
+    // Un-boxed battle fighter (Phase O-0): a free-standing creature in the arena —
+    // NO card panel, frame, rarity border or backing rect. Just a bare front sprite
+    // (player side mirrored), a floating HP bar above the head, and a soft ground
+    // shadow that shrinks/fades as the unit rises (so launchers & air combos read as
+    // airborne). Hit/heal/death flash tints the sprite SILHOUETTE (a white copy of the
+    // same sprite), never a rectangle. Renders only — no simulation.
     public class UnitView : MonoBehaviour
     {
-        Image _frame, _flash, _hpFill, _hpDelayed; CanvasGroup _artGroup; Text _name; RectTransform _rt;
-        Vector2 _basePos;
+        const float ART = 256f;        // sprite display size (4x the 64px source = crisp)
+        const float FOOT = 108f;       // sprite center -> ground line (feet) offset
+        const float MAX_JUMP = 300f;   // launch height at which the shadow is smallest
+
+        Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup;
+        RectTransform _rt, _artRt, _shadowRt; Text _name;
+        Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
-        Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic: physics push + reserve staging
+        Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic push + reserve staging
         public Vector2 combatOffset;    // view-driven fight choreography (dash / launch / slam)
 
         enum Anim { None, Attack, Hit, Heal }
@@ -23,66 +30,76 @@ namespace MTA.Battle
         public bool IsDead => _dead;
 
         public void Build(RectTransform parent, Vector2 anchoredPos, Vector2 size,
-            Color teamColor, Color speciesColor, string name, string initial, Font font,
+            Color teamColor, Color speciesColor, string speciesId, string displayName, Font font,
             string element = "", string role = "Bruiser", bool playerSide = false)
         {
-            var go = new GameObject("Unit_" + name, typeof(RectTransform), typeof(Image));
+            _mirror = playerSide ? -1 : 1;
+
+            // Soft ground shadow — a SIBLING under the stage (not a child of the fighter),
+            // so it stays on the ground line while the fighter jumps. Behind the fighter.
+            var sgo = new GameObject("Shadow", typeof(RectTransform), typeof(Image));
+            _shadowRt = sgo.GetComponent<RectTransform>(); _shadowRt.SetParent(parent, false);
+            _shadowRt.anchorMin = _shadowRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _shadowRt.sizeDelta = new Vector2(150, 42); _shadowRt.anchoredPosition = anchoredPos + new Vector2(0, -FOOT);
+            _shadow = sgo.GetComponent<Image>(); _shadow.sprite = ProceduralArt.Glow();
+            _shadow.color = new Color(0f, 0f, 0f, 0.45f); _shadow.raycastTarget = false;
+
+            // Fighter root (the moving transform).
+            var go = new GameObject("Unit_" + speciesId, typeof(RectTransform));
             _rt = go.GetComponent<RectTransform>(); _rt.SetParent(parent, false);
-            _rt.sizeDelta = size; _rt.anchoredPosition = anchoredPos; _basePos = anchoredPos;
-            _frame = go.GetComponent<Image>(); _frame.sprite = ProceduralArt.RoundedRect(); _frame.color = teamColor;   // team frame
+            _rt.sizeDelta = new Vector2(ART, ART + 130f); _rt.anchoredPosition = anchoredPos; _basePos = anchoredPos;
 
-            // Rounded species-tinted panel + procedural monster portrait + flash overlay.
-            var inner = new GameObject("Inner", typeof(RectTransform), typeof(Image));
-            var brt = inner.GetComponent<RectTransform>(); brt.SetParent(_rt, false);
-            brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one;
-            brt.offsetMin = new Vector2(7, 7); brt.offsetMax = new Vector2(-7, -7);
-            var innerImg = inner.GetComponent<Image>(); innerImg.sprite = ProceduralArt.RoundedRect();
-            innerImg.color = new Color(speciesColor.r * 0.2f, speciesColor.g * 0.2f, speciesColor.b * 0.26f, 0.95f);
+            // Bare sprite (mirrored on the player side) — no frame, no panel, no badge.
+            var art = new GameObject("Art", typeof(RectTransform));
+            _artRt = art.GetComponent<RectTransform>(); _artRt.SetParent(_rt, false);
+            _artRt.anchorMin = _artRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _artRt.sizeDelta = new Vector2(ART, ART); _artRt.anchoredPosition = Vector2.zero;
+            _artRt.localScale = new Vector3(_mirror, 1f, 1f);
 
-            // Real downloaded sprite (Pokemon-style front/back); procedural fallback.
-            var sprite = MonsterVisual.For(name, playerSide);
-            RectTransform artRt;
+            var sprite = MonsterVisual.For(speciesId, false);   // FRONT sprite for BOTH sides (KOF staging)
             if (sprite != null)
             {
-                var sgo = new GameObject("Sprite", typeof(RectTransform), typeof(Image));
-                artRt = sgo.GetComponent<RectTransform>(); artRt.SetParent(brt, false);
-                artRt.anchorMin = artRt.anchorMax = new Vector2(0.5f, 0.5f);
-                float s = Mathf.Min(size.x, size.y) * 0.95f; artRt.sizeDelta = new Vector2(s, s);
-                var simg = sgo.GetComponent<Image>(); simg.sprite = sprite; simg.preserveAspect = true; simg.raycastTarget = false;
+                var img = new GameObject("Sprite", typeof(RectTransform), typeof(Image));
+                var irt = img.GetComponent<RectTransform>(); irt.SetParent(_artRt, false);
+                irt.anchorMin = Vector2.zero; irt.anchorMax = Vector2.one; irt.offsetMin = Vector2.zero; irt.offsetMax = Vector2.zero;
+                _sprite = img.GetComponent<Image>(); _sprite.sprite = sprite; _sprite.preserveAspect = true; _sprite.raycastTarget = false;
+
+                // Silhouette flash: a white copy of the SAME sprite on top (matches the
+                // creature outline exactly; alpha driven per-frame). No backing rectangle.
+                var fl = new GameObject("Flash", typeof(RectTransform), typeof(Image));
+                var frt = fl.GetComponent<RectTransform>(); frt.SetParent(_artRt, false);
+                frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
+                _flash = fl.GetComponent<Image>(); _flash.sprite = sprite; _flash.preserveAspect = true;
+                _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
             }
             else
             {
-                artRt = MonsterArt.Build(brt, name, element, role, Mathf.Min(size.x, size.y) * 0.82f);
+                // Procedural fallback (rare — all shipped species have real sprites).
+                var proc = MonsterArt.Build(_artRt, speciesId, element, role, ART * 0.9f);
+                proc.anchorMin = proc.anchorMax = new Vector2(0.5f, 0.5f); proc.anchoredPosition = Vector2.zero;
+                var fl = new GameObject("Flash", typeof(RectTransform), typeof(Image));
+                var frt = fl.GetComponent<RectTransform>(); frt.SetParent(_artRt, false);
+                frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
+                _flash = fl.GetComponent<Image>(); _flash.sprite = ProceduralArt.Disc(); _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
             }
-            _artGroup = artRt.gameObject.AddComponent<CanvasGroup>();
+            _artGroup = _artRt.gameObject.AddComponent<CanvasGroup>();
 
-            var flashGo = new GameObject("Flash", typeof(RectTransform), typeof(Image));
-            var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(brt, false);
-            frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
-            _flash = flashGo.GetComponent<Image>(); _flash.sprite = ProceduralArt.Disc(); _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
-
-            // Nameplate bar at top.
-            var plate = new GameObject("Plate", typeof(RectTransform), typeof(Image));
-            var prt = plate.GetComponent<RectTransform>(); prt.SetParent(_rt, false);
-            prt.anchorMin = new Vector2(0, 1); prt.anchorMax = new Vector2(1, 1); prt.pivot = new Vector2(0.5f, 1);
-            prt.sizeDelta = new Vector2(-6, 34); prt.anchoredPosition = new Vector2(0, -3);
-            plate.GetComponent<Image>().color = new Color(0, 0, 0, 0.55f);
-            _name = MakeText(prt, font, name, 18, Vector2.zero, TextAnchor.MiddleCenter);
-
-            // Icon badge (species initial) top-left.
-            var icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
-            var irt = icon.GetComponent<RectTransform>(); irt.SetParent(_rt, false);
-            irt.anchorMin = irt.anchorMax = new Vector2(0, 1); irt.pivot = new Vector2(0, 1);
-            irt.sizeDelta = new Vector2(44, 44); irt.anchoredPosition = new Vector2(6, -6);
-            icon.GetComponent<Image>().color = new Color(speciesColor.r * 0.6f, speciesColor.g * 0.6f, speciesColor.b * 0.6f, 0.95f);
-            MakeText(irt, font, initial, 22, Vector2.zero, TextAnchor.MiddleCenter);
-
+            // Floating HP bar above the head.
             var bg = new GameObject("HpBg", typeof(RectTransform), typeof(Image));
             var bgrt = bg.GetComponent<RectTransform>(); bgrt.SetParent(_rt, false);
-            bgrt.sizeDelta = new Vector2(size.x - 14, 14); bgrt.anchoredPosition = new Vector2(0, -size.y * 0.5f + 13);
-            bg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
+            bgrt.anchorMin = bgrt.anchorMax = new Vector2(0.5f, 0.5f);
+            bgrt.sizeDelta = new Vector2(148, 14); bgrt.anchoredPosition = new Vector2(0, ART * 0.5f + 22f);
+            bg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f); bg.GetComponent<Image>().raycastTarget = false;
             _hpDelayed = MakeFill(bgrt, new Color(0.95f, 0.85f, 0.3f, 0.9f));
             _hpFill = MakeFill(bgrt, new Color(0.3f, 0.9f, 0.3f, 1f));
+
+            // Small floating name above the HP bar.
+            var np = new GameObject("Name", typeof(RectTransform));
+            var nprt = np.GetComponent<RectTransform>(); nprt.SetParent(_rt, false);
+            nprt.anchorMin = nprt.anchorMax = new Vector2(0.5f, 0.5f);
+            nprt.sizeDelta = new Vector2(240, 30); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 46f);
+            _name = MakeText(nprt, font, displayName, 20, Vector2.zero, TextAnchor.MiddleCenter);
+            _name.fontStyle = FontStyle.Bold;
 
             _spawnT = 0f;   // spawn-pop
         }
@@ -117,9 +134,9 @@ namespace MTA.Battle
             if (_rt == null) return;
             var go = new GameObject("Elem", typeof(RectTransform), typeof(Image));
             var rt = go.GetComponent<RectTransform>(); rt.SetParent(_rt, false);
-            rt.anchorMin = rt.anchorMax = new Vector2(1, 1); rt.pivot = new Vector2(1, 1);
-            rt.sizeDelta = new Vector2(28, 28); rt.anchoredPosition = new Vector2(-6, -6);
-            var img = go.GetComponent<Image>(); img.color = c; img.raycastTarget = false;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(20, 20); rt.anchoredPosition = new Vector2(-86, ART * 0.5f + 22f);
+            var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Disc(); img.color = c; img.raycastTarget = false;
         }
         public void SetBasePos(Vector2 p) { _basePos = p; }
         public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse
@@ -145,11 +162,13 @@ namespace MTA.Battle
             {
                 _deadTime += dt;
                 float p = Mathf.Clamp01(_deadTime / 0.7f);
-                _rt.anchoredPosition = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
+                Vector2 pos = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
+                _rt.anchoredPosition = pos;
                 _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
                 _rt.localRotation = Quaternion.Euler(0, 0, _knock.x * 25f * p);
                 if (_artGroup != null) _artGroup.alpha = (1f - p) * _reserveDim;      // dissolve
                 if (_flash != null) _flash.color = new Color(0.05f, 0.05f, 0.08f, p * 0.7f);
+                UpdateShadow(pos, spawnScale, (1f - p));
                 return;
             }
 
@@ -183,11 +202,26 @@ namespace MTA.Battle
                 if (p >= 1f) _anim = Anim.None;
             }
 
-            _rt.anchoredPosition = _basePos + idle + animOff + _impulse + combatOffset;
+            Vector2 apos = _basePos + idle + animOff + _impulse + combatOffset;
+            _rt.anchoredPosition = apos;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
             _rt.localRotation = Quaternion.identity;
             if (_artGroup != null) _artGroup.alpha = _reserveDim;
             if (_flash != null) _flash.color = flashC;
+            UpdateShadow(apos, spawnScale, 1f);
+        }
+
+        // Shadow stays on the ground line under the fighter's X; shrinks & fades with
+        // height above the ground so jumps/launchers read as airborne.
+        void UpdateShadow(Vector2 rootPos, float scale, float aliveAlpha)
+        {
+            if (_shadowRt == null) return;
+            float height = Mathf.Max(0f, rootPos.y - _basePos.y);
+            float k = Mathf.Clamp01(height / MAX_JUMP);
+            float s = Mathf.Lerp(1f, 0.55f, k) * scale;
+            _shadowRt.anchoredPosition = new Vector2(rootPos.x, _basePos.y - FOOT);
+            _shadowRt.localScale = new Vector3(s, s, 1f);
+            _shadow.color = new Color(0f, 0f, 0f, Mathf.Lerp(0.45f, 0.15f, k) * _reserveDim * aliveAlpha);
         }
 
         static Text MakeText(RectTransform parent, Font font, string s, int size, Vector2 pos, TextAnchor anchor)

@@ -32,6 +32,7 @@ namespace MTA.Battle
         readonly Dictionary<int, string> _speciesByKey = new Dictionary<int, string>();
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
+        public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
         RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena; VfxPool _vfx;
         readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
@@ -43,6 +44,17 @@ namespace MTA.Battle
 
         static int Key(int t, int s) => t * 100 + s;
         public void SetSpeed(float m) => speedMultiplier = m;
+
+        // Fallback humanizer: "mushroom_beast" -> "Mushroom Beast" (used only if no
+        // displayName dict was supplied). Never shows raw snake_case ids.
+        static string Humanize(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return id;
+            var parts = id.Split('_');
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i].Length > 0) parts[i] = char.ToUpper(parts[i][0]) + parts[i].Substring(1);
+            return string.Join(" ", parts);
+        }
 
         public void Play(BattleResult result, List<ReplayEvent> replay,
             Dictionary<string, AttackStyle> styleMap, RectTransform parent, Font font)
@@ -102,8 +114,9 @@ namespace MTA.Battle
                 v.transform.SetParent(_stage, false);
                 string elem = elementNames != null && elementNames.TryGetValue(u.speciesId, out var en) ? en : "";
                 string role = roleNames != null && roleNames.TryGetValue(u.speciesId, out var rn) ? rn : "Bruiser";
+                string dn = displayNames != null && displayNames.TryGetValue(u.speciesId, out var dnv) ? dnv : Humanize(u.speciesId);
                 v.Build(_stage, Vector2.zero, size, teamColor, speciesColor,
-                    u.speciesId, SpeciesIdentity.Initial(u.speciesId), _font, elem, role, u.team == 0);
+                    u.speciesId, dn, _font, elem, role, u.team == 0);
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
                 int k = Key(u.team, u.slot);

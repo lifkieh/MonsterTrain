@@ -131,8 +131,18 @@ namespace MTA.Meta
             foreach (var kv in by) if (kv.Value > best) { best = kv.Value; bestKey = kv.Key; }
             if (bestKey < 0 || best <= 0) return "-";
             return units.TryGetValue(bestKey, out var u)
-                ? u.sp + " (" + Side(u.team) + ") — " + best
+                ? Humanize(u.sp) + " (" + Side(u.team) + ") — " + best
                 : "-";
+        }
+
+        // "mushroom_beast" -> "Mushroom Beast": result-screen leaders never show raw ids.
+        static string Humanize(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return id;
+            var parts = id.Split('_');
+            for (int i = 0; i < parts.Length; i++)
+                if (parts[i].Length > 0) parts[i] = char.ToUpper(parts[i][0]) + parts[i].Substring(1);
+            return string.Join(" ", parts);
         }
     }
 }
