@@ -11,6 +11,9 @@ namespace MTA.Data
         public string speciesId;                 // lowercase_snake — NEVER rename (save key)
         public string displayName;
         public string element;                   // Fire / Water / Nature (elemental triangle)
+        public string evolvesTo;                 // speciesId of the evolved form ("" = terminal)
+        public int evolveLevel;                  // level required to evolve
+        public bool evolutionOnly;               // obtained only via evolution (excluded from wild pools)
         public StatBlock baseStats;              // level-1 values
         public GrowthProfile growth = new GrowthProfile();
         public SkillDefinition basicSkill;
@@ -24,6 +27,9 @@ namespace MTA.Data
             speciesId = speciesId,
             displayName = displayName,
             element = element,
+            evolvesTo = evolvesTo,
+            evolveLevel = evolveLevel,
+            evolutionOnly = evolutionOnly,
             baseStats = baseStats,
             growth = growth.ToWeights(),
             basicSkill = basicSkill != null ? basicSkill.ToData() : null,

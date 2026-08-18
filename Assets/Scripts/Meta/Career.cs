@@ -17,10 +17,10 @@ namespace MTA.Meta
     // deterministic from the species pool, so it's edit-mode testable.
     public static class Career
     {
-        public const int Stages = 12;
+        public const int Stages = 18;
         public const int TeamSize = 3;
         public const int PerLeague = 3;
-        public static readonly string[] Leagues = { "Bronze", "Silver", "Gold", "Master" };
+        public static readonly string[] Leagues = { "Bronze", "Silver", "Gold", "Master", "Champion", "Legend" };
 
         // Enemy level rises one per stage from the casual baseline (5..16).
         public static int EnemyLevel(int stageIndex) => GameSession.Level + stageIndex;

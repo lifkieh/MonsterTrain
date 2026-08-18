@@ -24,6 +24,7 @@ namespace MTA.App
         RectTransform _detail;
         Text _detailName, _detailStats, _detailXp;
         Image _detailXpFill;
+        Button _evolveBtn;
         string _detailSpecies;
         RectTransform _career, _careerContent;
         Text _careerHeader;
@@ -36,7 +37,7 @@ namespace MTA.App
         Text _settingsInfo;
         BalanceConfig _cfg;
         SaveData _profile;
-        List<string> _roster;
+        List<string> _roster, _obtainable;
         List<string> _lastTeam = new List<string>();
         bool _hadSave;
         Button _startBtn, _muteBtn;
@@ -57,16 +58,19 @@ namespace MTA.App
             var pool = new List<string>();
             foreach (var s in _reg.All) pool.Add(s.speciesId);
             pool.Sort(System.StringComparer.Ordinal);
-            _roster = pool;
-            _stages = Career.Build(pool);
-            _ctrl = new GameController(_reg, cfg, pool, seedBase: 20260817);
+            _roster = pool;                                  // full dex (collection)
+            // Obtainable = wild pool: excludes evolution-only forms (earned, not rolled).
+            _obtainable = new List<string>();
+            foreach (var id in pool) if (!_reg.Get(id).evolutionOnly) _obtainable.Add(id);
+            _stages = Career.Build(_obtainable);
+            _ctrl = new GameController(_reg, cfg, _obtainable, seedBase: 20260817);
             _slotMap = ReplayBuilder.SlotMap(_reg.All);   // skillId -> slot, for replay classification
             _atkStyles = AttackStyles.Map(_reg.All);      // species -> attack style (presentation)
             foreach (var s in _reg.All) _elemColors[s.speciesId] = UIFactory.ElementColor(s.element);
 
             // Meta progression: load or create the player profile.
             _hadSave = SaveSystem.Exists();
-            _profile = SaveSystem.Load() ?? Progression.NewGame(pool);
+            _profile = SaveSystem.Load() ?? Progression.NewGame(_obtainable);
             if (!_hadSave) SaveSystem.Save(_profile);
 
             MTA.Battle.AudioManager.Ensure();                       // audio feedback
@@ -154,7 +158,7 @@ namespace MTA.App
             // Encyclopedia: mark the enemies we just fought as seen.
             foreach (var e in _ctrl.Session.enemyTeam) _profile.MarkSeen(e);
             // Meta progression: award XP/coins/levels/unlocks for this battle and save.
-            var rw = Progression.ApplyBattle(_profile, _lastTeam, won, _roster);
+            var rw = Progression.ApplyBattle(_profile, _lastTeam, won, _obtainable);
             SaveSystem.Save(_profile);
             string rt = "Rewards:  +" + rw.playerXp + " XP    +" + rw.coins + " coins";
             if (rw.playerLevelsGained > 0) rt += "    PLAYER LEVEL UP!";
@@ -331,8 +335,22 @@ namespace MTA.App
             _detailXp = UIFactory.Label(_detail, "", 26, new Vector2(0, 648), new Vector2(760, 40), _font);
             _detailStats = UIFactory.Label(_detail, "", 28, new Vector2(0, 40), new Vector2(980, 900), _font);
             _detailStats.alignment = TextAnchor.UpperCenter;
-            UIFactory.Button(_detail, "TRAIN  (-" + Progression.TrainCost + " coins)", new Vector2(0, -740), new Vector2(560, 120), _font, OnTrain);
-            UIFactory.Button(_detail, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.ToCollection());
+            UIFactory.Button(_detail, "TRAIN  (-" + Progression.TrainCost + " coins)", new Vector2(0, -700), new Vector2(560, 110), _font, OnTrain);
+            _evolveBtn = UIFactory.Button(_detail, "EVOLVE", new Vector2(0, -820), new Vector2(560, 110), _font, OnEvolve);
+            UIFactory.SetButtonColor(_evolveBtn, new Color(0.85f, 0.5f, 0.95f));
+            _evolveBtn.gameObject.SetActive(false);
+            UIFactory.Button(_detail, "BACK", new Vector2(0, -940), new Vector2(400, 96), _font, () => _ctrl.ToCollection());
+        }
+
+        void OnEvolve()
+        {
+            var sp = _reg.Get(_detailSpecies);
+            string evo = Progression.Evolve(_profile, sp);
+            if (evo == null) return;
+            SaveSystem.Save(_profile);
+            _detailSpecies = evo;                            // now viewing the evolved form
+            ShowPopup("EVOLUTION!", (sp != null ? sp.displayName : _detailSpecies) + "  evolved into\n" + _reg.Get(evo).displayName + "!");
+            RefreshDetail();
         }
 
         void RefreshDetail()
@@ -345,6 +363,14 @@ namespace MTA.App
             _detailXpFill.fillAmount = m.level >= Progression.MaxLevel ? 1f : Mathf.Clamp01((float)m.xp / next);
             _detailXp.text = "XP  " + m.xp + " / " + next + "        Coins: " + _profile.coins;
             _detailStats.text = StatsBlock(sp, m.level);
+            if (_evolveBtn != null)
+            {
+                bool can = Progression.CanEvolve(_profile, sp);
+                _evolveBtn.gameObject.SetActive(can || (sp != null && !string.IsNullOrEmpty(sp.evolvesTo)));
+                _evolveBtn.interactable = can;
+                var t = _evolveBtn.GetComponentInChildren<Text>();
+                if (t != null) t.text = can ? "EVOLVE" : (sp != null && !string.IsNullOrEmpty(sp.evolvesTo) ? "EVOLVE  (Lv " + sp.evolveLevel + ")" : "EVOLVE");
+            }
         }
 
         int Lg(SpeciesData sp, Stat s) => StatMath.LevelGain(sp.speciesId, s, GrowthTier.B, _cfg);

@@ -29,6 +29,9 @@ namespace MTA.Core
         public string speciesId;                 // lowercase_snake, append-only
         public string displayName;
         public string element = "";              // Fire / Water / Nature (elemental triangle)
+        public string evolvesTo = "";            // speciesId of the evolved form ("" = terminal)
+        public int evolveLevel = 0;              // level required to evolve (0 = never)
+        public bool evolutionOnly = false;       // obtained only via evolution (excluded from wild pools)
         public StatBlock baseStats;              // level-1 values
         public GrowthWeights growth;             // tendencies; instances roll grades
         public SkillData basicSkill, activeSkill, ultimateSkill;   // exactly 3

@@ -37,7 +37,7 @@ namespace MTA.Core
         public static SweepSummary Run(SweepConfig sc, BalanceConfig cfg, SpeciesRegistry registry)
         {
             var speciesIds = new List<string>();
-            foreach (var s in registry.All) speciesIds.Add(s.speciesId);
+            foreach (var s in registry.All) if (!s.evolutionOnly) speciesIds.Add(s.speciesId);   // wild pool only
             speciesIds.Sort(StringComparer.Ordinal);          // registry order-independent
 
             var durations = new List<double>(sc.battles);

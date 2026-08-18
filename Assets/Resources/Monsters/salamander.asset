@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 03553d4384ae3c841ae273ed7c1b791f, type: 3}
-  m_Name: wolf
+  m_Name: salamander
   m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
-  speciesId: wolf
-  displayName: Wolf
-  element: Nature
-  evolvesTo: dire_wolf
+  speciesId: salamander
+  displayName: Salamander
+  element: Fire
+  evolvesTo: inferno_drake
   evolveLevel: 10
   baseStats:
     hp: 104
@@ -27,35 +27,35 @@ MonoBehaviour:
   growth:
     perStat:
     - d: 1
-      c: 2
-      b: 3
-      a: 2
-      s: 1
-    - d: 0
       c: 1
-      b: 2
-      a: 3
-      s: 2
-    - d: 2
-      c: 3
-      b: 2
-      a: 1
-      s: 0
-    - d: 1
-      c: 2
-      b: 3
-      a: 2
-      s: 1
-    - d: 3
-      c: 2
       b: 1
-      a: 0
-      s: 0
-    - d: 2
-      c: 3
-      b: 2
       a: 1
-      s: 0
+      s: 1
+    - d: 1
+      c: 1
+      b: 1
+      a: 1
+      s: 1
+    - d: 1
+      c: 1
+      b: 1
+      a: 1
+      s: 1
+    - d: 1
+      c: 1
+      b: 1
+      a: 1
+      s: 1
+    - d: 1
+      c: 1
+      b: 1
+      a: 1
+      s: 1
+    - d: 1
+      c: 1
+      b: 1
+      a: 1
+      s: 1
   basicSkill: {fileID: 11400000, guid: d3f51536a8d0b374db32c54ef0450c57, type: 2}
   activeSkill: {fileID: 11400000, guid: 98973dfd699e19940930fcbb969ff964, type: 2}
   ultimateSkill: {fileID: 11400000, guid: 2117df39f7530034aa71ae33aa6ca463, type: 2}

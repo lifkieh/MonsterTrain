@@ -111,7 +111,7 @@ namespace MTA.Core
         public static List<SpeciesWr> RoundRobin(BalanceConfig cfg, SpeciesRegistry reg, int level, int seedsPerPair)
         {
             var ids = new List<string>();
-            foreach (var s in reg.All) ids.Add(s.speciesId);
+            foreach (var s in reg.All) if (!s.evolutionOnly) ids.Add(s.speciesId);   // wild pool only
             ids.Sort(StringComparer.Ordinal);
             var wins = new Dictionary<string, int>(); var games = new Dictionary<string, int>();
             foreach (var id in ids) { wins[id] = 0; games[id] = 0; }
@@ -144,7 +144,7 @@ namespace MTA.Core
             int battles, int teamSize, int level, int baseSeed = 700000)
         {
             var ids = new List<string>();
-            foreach (var s in reg.All) ids.Add(s.speciesId);
+            foreach (var s in reg.All) if (!s.evolutionOnly) ids.Add(s.speciesId);   // wild pool only
             ids.Sort(StringComparer.Ordinal);
             var wins = new Dictionary<string, int>(); var games = new Dictionary<string, int>();
             foreach (var id in ids) { wins[id] = 0; games[id] = 0; }

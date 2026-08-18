@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MTA.Core;
 
 namespace MTA.Meta
 {
@@ -79,6 +80,25 @@ namespace MTA.Meta
             m.xp += TrainXp;
             while (m.level < MaxLevel && m.xp >= MonsterXpForNext(m.level)) { m.xp -= MonsterXpForNext(m.level); m.level++; }
             return m.level - from;
+        }
+
+        // Evolution: an owned monster at/above its evolve level transforms into its
+        // evolved species in place (keeps level + xp). Returns the new speciesId, or
+        // null if not eligible. sp is the CURRENT species' data (from the registry).
+        public static bool CanEvolve(SaveData d, SpeciesData sp)
+        {
+            if (sp == null || string.IsNullOrEmpty(sp.evolvesTo) || !d.IsUnlocked(sp.speciesId)) return false;
+            var m = d.Find(sp.speciesId);
+            return m != null && m.level >= sp.evolveLevel;
+        }
+
+        public static string Evolve(SaveData d, SpeciesData sp)
+        {
+            if (!CanEvolve(d, sp)) return null;
+            var m = d.Find(sp.speciesId);
+            m.speciesId = sp.evolvesTo;                       // transform in place
+            if (!d.unlocked.Contains(sp.evolvesTo)) d.unlocked.Add(sp.evolvesTo);
+            return sp.evolvesTo;
         }
 
         // Fresh profile: first N of the roster unlocked, each in the collection at L1.

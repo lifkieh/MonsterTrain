@@ -36,6 +36,13 @@ namespace MTA.App.EditorTools
             new Line { id="fire_lizard",    hp=94,  atk=12, def=15, spd=15, intel=26, luck=12, element="Fire",   role="Mage" },
             new Line { id="bee",            hp=94,  atk=20, def=11, spd=26, intel=14, luck=20, element="Nature", role="Support", active="power_strike" },
             new Line { id="mushroom_beast", hp=138, atk=16, def=23, spd=13, intel=34, luck=12, element="Water",  role="Support" },
+            // Content expansion (+6): kits live in the assets (active="" keeps them).
+            new Line { id="salamander",     hp=104, atk=22, def=17, spd=18, intel=8,  luck=12, element="Fire",   role="Bruiser" },
+            new Line { id="phoenix",        hp=94,  atk=12, def=15, spd=15, intel=26, luck=12, element="Fire",   role="Mage" },
+            new Line { id="kraken",         hp=102, atk=21, def=16, spd=19, intel=8,  luck=14, element="Water",  role="Bruiser" },
+            new Line { id="jelly",          hp=128, atk=16, def=22, spd=13, intel=30, luck=12, element="Water",  role="Support" },
+            new Line { id="treant",         hp=150, atk=20, def=30, spd=15, intel=8,  luck=8,  element="Nature", role="Tank" },
+            new Line { id="mantis",         hp=78,  atk=21, def=10, spd=27, intel=12, luck=20, element="Nature", role="Assassin" },
         };
 
         static SpeciesRegistry TunedRegistry(SpeciesRegistry real)
