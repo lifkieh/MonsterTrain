@@ -34,7 +34,7 @@ namespace MTA.Battle
         RectTransform _root, _stage; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena;
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
-        float _shakeT, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
+        float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
         float _slowmo = 1f, _slowmoT;
 
         static int Key(int t, int s) => t * 100 + s;
@@ -219,7 +219,7 @@ namespace MTA.Battle
                         break;
                     }
 
-                    ApplyCam(b.cam);
+                    _zoomTarget = ult ? 1.16f : 1.05f;   // wind-up; the impact punch lands on the connecting hit
                     int tt = e.targetTeam, ts = e.targetSlot;
                     if (AttackStyles.IsRanged(st))
                     {
@@ -283,28 +283,35 @@ namespace MTA.Battle
             }
 
             int n = Mathf.Clamp(b.hits, 1, 15);
-            float baseStep = ult ? 0.06f : b.crit ? 0.055f : 0.05f;
+            int denom = Mathf.Max(1, n - 1);
+            float baseStep = ult ? 0.055f : b.crit ? 0.05f : 0.045f;
             for (int i = 0; i < n; i++)
             {
-                // Respect the 0.5×–4× playback buttons: fast-forward speeds combos too.
+                // Respect the 0.5×–4× playback buttons; combo accelerates into the finish.
                 float sp = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
-                float step = baseStep / sp;
+                float ramp = Mathf.Lerp(1.15f, 0.68f, i / (float)denom);
+                float step = baseStep * ramp / sp;
                 bool last = i == n - 1;
                 Vector2 tpos = target != null ? target.BasePos : PosOf(tt, ts);
-                actor?.PlayAttack(dir, DashDist(st, ult) * (0.55f + 0.45f * (i / (float)n)), ult && last);
+                actor?.PlayAttack(dir, DashDist(st, ult) * (0.5f + 0.5f * (i / (float)n)), ult && last);
                 target?.PlayHit(b.crit && last);
                 _fx.Burst(tpos + ComboJit(i), last ? (ult ? BurstKind.Ultimate : b.crit ? BurstKind.Crit : MeleeBurst(st)) : BurstKind.Slash);
                 AudioManager.Play((b.crit || ult) && last ? Sfx.Crit : Sfx.Hit);
-                if (!last) Shake(ult ? 6f : 3f);
-                if (last)
+                if (!last)
                 {
-                    _texts.Spawn(tpos + Jitter(), b.amount.ToString(), (b.crit || ult) ? CCrit : CWhite, (b.crit || ult) ? 42 : 30);
-                    if (b.crit) _texts.Spawn(tpos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
-                    if (target != null) { target.Knock(dir, b.knockback); if (b.launch) target.Launch(120f); }
-                    Shake(ult ? 18f : b.crit ? 12f : 7f);
-                    if (b.crit || ult) ZoomPunch(ult ? 0.1f : 0.05f);
+                    Shake(ult ? 5f : 2.5f);
+                    HitStop(0.02f / sp);                                      // light flow freeze between hits
                 }
-                HitStop((b.hitStop + baseStep + 0.02f) / sp);   // hold the sim clock across the combo
+                else
+                {
+                    _texts.Spawn(tpos + Jitter(), b.amount.ToString(), (b.crit || ult) ? CCrit : CWhite, (b.crit || ult) ? 44 : 30);
+                    if (b.crit) _texts.Spawn(tpos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
+                    if (target != null) { target.Knock(dir, b.knockback); if (b.launch) target.Launch(130f); }
+                    float impact = ult ? 0.10f : b.crit ? 0.085f : 0.055f;    // heavier freeze on the connecting hit
+                    HitStop(impact / sp);
+                    Shake(ult ? 22f : b.crit ? 15f : 8f);
+                    ZoomPunch(ult ? 0.12f : b.crit ? 0.07f : 0.03f);
+                }
                 yield return new WaitForSecondsRealtime(step);
             }
         }
@@ -327,12 +334,12 @@ namespace MTA.Battle
                 case ChoreoCam.ZoomCombo: _zoomTarget = 1.06f; break;
                 case ChoreoCam.ShakeCrit: _zoomTarget = 1.09f; Shake(12f); ZoomPunch(0.05f); break;
                 case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); break;
-                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.22f; Shake(20f); StartSlowMo(); break;
+                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); break;
                 case ChoreoCam.ZoomWinner: _zoomTarget = 1.12f; break;
             }
         }
 
-        void StartSlowMo() { _slowmo = 0.28f; _slowmoT = 1.3f; }
+        void StartSlowMo() { _slowmo = 0.22f; _slowmoT = 1.4f; }
 
         static float DashDist(AttackStyle s, bool ult)
         {
@@ -351,8 +358,8 @@ namespace MTA.Battle
         static Vector2 ComboJit(int i) => new Vector2(UnityEngine.Random.Range(-40f, 40f), UnityEngine.Random.Range(-30f, 40f));
 
         void HitStop(float d) => _hitstop = Mathf.Max(_hitstop, d);
-        void Shake(float mag) { _shakeT = 0.25f; _shakeMag = Mathf.Max(_shakeMag, mag); }
-        void ZoomPunch(float amt) { _zoom += amt; }
+        void Shake(float mag) { float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
+        void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt, 1.35f); }
 
         void UpdateCamera()
         {
@@ -361,15 +368,15 @@ namespace MTA.Battle
             if (_shakeT > 0f)
             {
                 _shakeT -= Time.deltaTime;
-                float m = _shakeMag * Mathf.Clamp01(_shakeT / 0.25f);
+                float m = _shakeMag * Mathf.Clamp01(_shakeT / _shakeDur);
                 _stage.anchoredPosition = new Vector2(UnityEngine.Random.Range(-m, m), UnityEngine.Random.Range(-m, m));
                 if (_shakeT <= 0f) { _shakeMag = 0f; _stage.anchoredPosition = Vector2.zero; }
             }
             else _stage.anchoredPosition = Vector2.Lerp(_stage.anchoredPosition, Vector2.zero, 12f * Time.deltaTime);
 
             float restZoom = _finishedFired ? 1.1f : 1f;
-            _zoomTarget = Mathf.Lerp(_zoomTarget, restZoom, 1.5f * Time.deltaTime);
-            _zoom = Mathf.Lerp(_zoom, _zoomTarget, 5f * Time.deltaTime);
+            _zoomTarget = Mathf.Lerp(_zoomTarget, restZoom, 1.2f * Time.deltaTime);   // hold the punch a touch longer
+            _zoom = Mathf.Clamp(Mathf.Lerp(_zoom, _zoomTarget, 5.5f * Time.deltaTime), 0.9f, 1.35f);
             _stage.localScale = Vector3.one * _zoom;
 
             _arena?.SetParallax(camOffset);
