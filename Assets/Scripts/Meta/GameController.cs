@@ -93,6 +93,10 @@ namespace MTA.Meta
         public void ToDaily() => Flow.GoDaily();
         public void ToSettings() => Flow.GoSettings();
         public void ToAbout() => Flow.GoAbout();
+        public void ToOnboarding() => Flow.GoOnboarding();
+        public void ToQuests() => Flow.GoQuests();
+        public void ToAchievements() => Flow.GoAchievements();
+        public void ToDex() => Flow.GoDex();
         public void BackToMenu() => Flow.GoMainMenu();
     }
 }

@@ -13,10 +13,19 @@ namespace MTA.Meta
         public int xp;
     }
 
+    // Runtime state for one quest (definition lives in code — see Quests).
+    [Serializable]
+    public class QuestState
+    {
+        public string id;
+        public int progress;
+        public bool claimed;
+    }
+
     [Serializable]
     public class SaveData
     {
-        public const int CurrentVersion = 1;
+        public const int CurrentVersion = 2;
 
         public int saveVersion = CurrentVersion;
         public string playerName = "Trainer";
@@ -37,6 +46,22 @@ namespace MTA.Meta
         public List<MonsterSave> collection = new List<MonsterSave>();
         public string lastSaveUtc = "";
 
+        // --- v2 additive fields (backward-compatible: old saves default these) ---
+        public bool onboarded;              // T: first-launch tutorial completed
+        public int winStreak;               // X: current consecutive-win streak
+        public int bestWinStreak;           // X: best-ever win streak
+        public int evolutionsDone;          // U/V: lifetime evolutions
+        public int trainingsDone;           // U/V: lifetime training sessions
+        public int bestCombo;               // V: best combo count in a battle
+        public int leaguesCompleted;        // U/V: career leagues finished
+        public int questDay = -1;           // U: day index the daily quests were rolled for
+        public int dailyWins;               // U: wins today (reset per questDay)
+        public int dailyBattles;            // U: battles today
+        public int dailyTrains;             // U: trainings today
+        public List<QuestState> quests = new List<QuestState>();   // U
+        public List<string> achievements = new List<string>();     // V: unlocked ids
+        public List<string> seenNews = new List<string>();         // reserved
+
         public MonsterSave Find(string speciesId)
         {
             for (int i = 0; i < collection.Count; i++) if (collection[i].speciesId == speciesId) return collection[i];
@@ -47,6 +72,13 @@ namespace MTA.Meta
         public bool IsSeen(string speciesId) => IsUnlocked(speciesId) || seen.Contains(speciesId);
         public void MarkSeen(string speciesId) { if (!seen.Contains(speciesId) && !IsUnlocked(speciesId)) seen.Add(speciesId); }
         public int LevelOf(string speciesId) { var m = Find(speciesId); return m != null ? m.level : 1; }
+
+        public QuestState Quest(string id)
+        {
+            for (int i = 0; i < quests.Count; i++) if (quests[i].id == id) return quests[i];
+            return null;
+        }
+        public bool HasAchievement(string id) => achievements.Contains(id);
     }
 
     public class BattleRewards

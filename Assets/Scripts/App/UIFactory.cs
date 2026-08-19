@@ -19,7 +19,7 @@ namespace MTA.App
             var scaler = go.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080, 1920);   // portrait
-            scaler.matchWidthOrHeight = 0.5f;
+            scaler.matchWidthOrHeight = 0f;   // match WIDTH: portrait UI never clips at the sides (1080x2340 etc.)
             return c;
         }
 

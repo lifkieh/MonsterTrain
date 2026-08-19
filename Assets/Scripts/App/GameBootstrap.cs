@@ -36,6 +36,12 @@ namespace MTA.App
         Button _dailyClaimBtn;
         RectTransform _settings, _about, _loading;
         Text _settingsInfo;
+        // Phases T–X
+        RectTransform _onboarding, _quests, _questContent, _achievements, _achContent, _dex, _dexContent, _dexDetail;
+        Text _questHeader, _achHeader, _dexHeader;
+        Button _menuQuestBtn;
+        int _dexSel;
+        int _onbPage;
         BalanceConfig _cfg;
         SaveData _profile;
         List<string> _roster, _obtainable;
@@ -107,14 +113,20 @@ namespace MTA.App
             BuildDaily(canvas.transform);
             BuildSettings(canvas.transform);
             BuildAbout(canvas.transform);
+            BuildOnboarding(canvas.transform);
+            BuildQuests(canvas.transform);
+            BuildAchievements(canvas.transform);
+            BuildDex(canvas.transform);
             BuildPopup(canvas.transform);
             BuildLoading(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
+            Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
             OnPhase(_ctrl.Flow.Phase);
-            // Retention: greet the player with their daily reward on launch.
-            if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
+            // First launch: run onboarding. Otherwise greet with the daily reward if claimable.
+            if (!_profile.onboarded) _ctrl.ToOnboarding();
+            else if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
             StartCoroutine(HideLoading());   // brief branded loading screen
         }
 
@@ -131,6 +143,15 @@ namespace MTA.App
             _daily.gameObject.SetActive(p == GamePhase.Daily);
             _settings.gameObject.SetActive(p == GamePhase.Settings);
             _about.gameObject.SetActive(p == GamePhase.About);
+            _onboarding.gameObject.SetActive(p == GamePhase.Onboarding);
+            _quests.gameObject.SetActive(p == GamePhase.Quests);
+            _achievements.gameObject.SetActive(p == GamePhase.Achievements);
+            _dex.gameObject.SetActive(p == GamePhase.Dex);
+            if (p == GamePhase.Onboarding) RefreshOnboarding();
+            if (p == GamePhase.Quests) RefreshQuests();
+            if (p == GamePhase.Achievements) RefreshAchievements();
+            if (p == GamePhase.Dex) RefreshDex();
+            if (p == GamePhase.MainMenu) RefreshMenuBadges();
             if (p == GamePhase.Career) RefreshCareer();
             if (p == GamePhase.Daily) RefreshDaily();
             if (p == GamePhase.Settings) RefreshSettings();
@@ -162,6 +183,10 @@ namespace MTA.App
                 case GamePhase.Daily: return _daily;
                 case GamePhase.Settings: return _settings;
                 case GamePhase.About: return _about;
+                case GamePhase.Onboarding: return _onboarding;
+                case GamePhase.Quests: return _quests;
+                case GamePhase.Achievements: return _achievements;
+                case GamePhase.Dex: return _dex;
                 default: return null;
             }
         }
@@ -251,13 +276,21 @@ namespace MTA.App
 
             // Encyclopedia: mark the enemies we just fought as seen.
             foreach (var e in _ctrl.Session.enemyTeam) _profile.MarkSeen(e);
-            // Meta progression: award XP/coins/levels/unlocks for this battle and save.
+            // Meta progression: award XP/coins/levels/unlocks for this battle.
             var rw = Progression.ApplyBattle(_profile, _lastTeam, won, _obtainable);
-            SaveSystem.Save(_profile);
+
+            // Quests / achievements / retention counters.
+            Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
+            _profile.dailyBattles++;
+            if (won) { _profile.dailyWins++; _profile.winStreak++; if (_profile.winStreak > _profile.bestWinStreak) _profile.bestWinStreak = _profile.winStreak; }
+            else _profile.winStreak = 0;
+            int combo = BestComboCount(r);
+            if (combo > _profile.bestCombo) _profile.bestCombo = combo;
+
             string rt = "Rewards:  +" + rw.playerXp + " XP    +" + rw.coins + " coins";
             if (rw.playerLevelsGained > 0) rt += "    PLAYER LEVEL UP!";
-            if (rw.leveledUp.Count > 0) rt += "\nLeveled up: " + string.Join(", ", rw.leveledUp);
-            if (rw.newlyUnlocked.Count > 0) rt += "\nUnlocked: " + string.Join(", ", rw.newlyUnlocked);
+            if (rw.leveledUp.Count > 0) rt += "\nLeveled up: " + NiceLeveled(rw.leveledUp);
+            if (rw.newlyUnlocked.Count > 0) rt += "\nUnlocked: " + NiceList(rw.newlyUnlocked);
 
             // Career: record a stage clear (first clear pays the reward once).
             int stageIdx = _ctrl.Session.careerStageIndex;
@@ -268,11 +301,16 @@ namespace MTA.App
                 long bonus = Career.ClearStage(_profile, stageIdx, _stages[stageIdx].reward);
                 if (bonus > 0)
                 {
-                    SaveSystem.Save(_profile);
                     rt += "\nSTAGE CLEARED!  +" + bonus + " coins   (" + Career.CompletionPercent(_profile) + "%)";
                     if (Career.IsComplete(_profile)) rt += "\nCAREER COMPLETE!";
                 }
             }
+            _profile.leaguesCompleted = _profile.careerStage / Career.PerLeague;
+
+            // Persist once (coalesced), then surface any freshly-earned achievements.
+            SaveSystem.Save(_profile);
+            var newAch = Achievements.CheckNew(_profile, _roster.Count);
+            if (newAch.Count > 0) { SaveSystem.Save(_profile); foreach (var a in newAch) rt += "\n★ Achievement: " + a.title; }
 
             _rewardText.text = rt;
             if (won) MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Reward);
@@ -341,31 +379,91 @@ namespace MTA.App
             return string.Join(" ", parts);
         }
 
+        string NiceList(List<string> ids)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < ids.Count; i++) { if (i > 0) sb.Append(", "); sb.Append(Nice(ids[i])); }
+            return sb.ToString();
+        }
+
+        // "wolf 3->4" (dev notation from Progression) → "Wolf Lv 4".
+        string NiceLeveled(List<string> raw)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < raw.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                var s = raw[i];
+                int sp = s.IndexOf(' '); int arrow = s.IndexOf("->");
+                if (sp > 0 && arrow > sp) sb.Append(Nice(s.Substring(0, sp))).Append(" Lv ").Append(s.Substring(arrow + 2));
+                else sb.Append(s);
+            }
+            return sb.ToString();
+        }
+
+        // Best single-monster hit count in a battle (matches the "Combo King" stat).
+        int BestComboCount(BattleResult r)
+        {
+            if (r == null) return 0;
+            var cnt = new Dictionary<string, int>(); int best = 0;
+            foreach (var e in r.events)
+                if (e.kind == "Action" && e.actorTeam != e.targetTeam)
+                {
+                    string k = e.actorTeam + "_" + e.actorSlot;
+                    cnt.TryGetValue(k, out var c); c++; cnt[k] = c; if (c > best) best = c;
+                }
+            return best;
+        }
+
+        RectTransform _progressContent;
         void BuildProgress(Transform parent)
         {
             _progress = UIFactory.Panel(parent, "ProgressPanel", new Color(0.09f, 0.1f, 0.13f));
-            UIFactory.Label(_progress, "PROGRESS", 48, new Vector2(0, 840), new Vector2(900, 90), _font);
-            _progressText = UIFactory.Label(_progress, "", 28, new Vector2(0, -30), new Vector2(980, 1560), _font);
-            _progressText.alignment = TextAnchor.UpperLeft;
-            UIFactory.Button(_progress, "BACK", new Vector2(0, -880), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+            UIFactory.Label(_progress, "TRAINER PROFILE", 48, new Vector2(0, 880), new Vector2(1000, 90), _font);
+            var holder = new GameObject("ProgContent", typeof(RectTransform));
+            _progressContent = holder.GetComponent<RectTransform>(); _progressContent.SetParent(_progress, false);
+            _progressContent.anchorMin = _progressContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _progressContent.sizeDelta = new Vector2(1040, 1800); _progressContent.anchoredPosition = new Vector2(0, -20);
+            UIFactory.Button(_progress, "BACK", new Vector2(0, -900), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
         }
 
+        // Phase X: retention dashboard — profile stats, streaks, completion bars, next goals.
         void RefreshProgress()
         {
             var d = _profile;
-            string s = "Player: " + d.playerName + "    Level " + d.playerLevel + "\n" +
-                       "XP: " + d.playerXp + " / " + Progression.PlayerXpForNext(d.playerLevel) + "\n" +
-                       "Coins: " + d.coins + "    Battles won: " + d.battlesWon + " / " + d.battlesPlayed + "\n\n" +
-                       "COLLECTION  (" + d.unlocked.Count + " / " + _roster.Count + " unlocked)\n";
-            foreach (var id in _roster)
+            for (int i = _progressContent.childCount - 1; i >= 0; i--) Destroy(_progressContent.GetChild(i).gameObject);
+            float y = 860;
+            int winPct = d.battlesPlayed > 0 ? (int)(d.battlesWon * 100L / d.battlesPlayed) : 0;
+            UIFactory.Label(_progressContent, d.playerName + "     Trainer Lv " + d.playerLevel, 40, new Vector2(0, y), new Vector2(1000, 56), _font); y -= 66;
+            UIFactory.Label(_progressContent, d.coins + " coins        " + d.battlesWon + " / " + d.battlesPlayed + " won  (" + winPct + "%)", 30, new Vector2(0, y), new Vector2(1000, 44), _font).color = new Color(0.8f, 0.85f, 0.95f); y -= 52;
+            UIFactory.Label(_progressContent, "Win streak: " + d.winStreak + "    Best: " + d.bestWinStreak + "    Daily streak: " + d.loginStreak, 30, new Vector2(0, y), new Vector2(1000, 44), _font).color = new Color(1f, 0.85f, 0.4f); y -= 84;
+
+            int roster = _roster.Count;
+            CompletionBar("Monster Dex", roster > 0 ? Achievements.Discovered(d) * 100 / roster : 0, ref y, new Color(0.4f, 0.8f, 1f));
+            CompletionBar("Collection owned", roster > 0 ? d.unlocked.Count * 100 / roster : 0, ref y, new Color(0.5f, 0.9f, 0.5f));
+            CompletionBar("Career", Career.CompletionPercent(d), ref y, new Color(1f, 0.7f, 0.3f));
+            CompletionBar("Achievements", Achievements.Defs.Length > 0 ? Achievements.UnlockedCount(d) * 100 / Achievements.Defs.Length : 0, ref y, new Color(1f, 0.82f, 0.3f));
+
+            y -= 16;
+            UIFactory.Label(_progressContent, "NEXT GOALS", 32, new Vector2(-460, y), new Vector2(600, 44), _font).alignment = TextAnchor.MiddleLeft; y -= 54;
+            int shown = 0;
+            foreach (var def in Quests.Defs)
             {
-                var m = d.Find(id);
-                if (d.IsUnlocked(id) && m != null)
-                    s += "  " + Nice(id) + "   Lv " + m.level + "   (" + m.xp + "/" + Progression.MonsterXpForNext(m.level) + ")\n";
-                else
-                    s += "  [LOCKED]  " + Nice(id) + "\n";
+                if (shown >= 4 || Quests.IsComplete(d, def)) continue;
+                UIFactory.Label(_progressContent, "•  " + def.title + "   (" + Quests.Progress(d, def) + " / " + def.target + ")", 28, new Vector2(-30, y), new Vector2(1000, 40), _font).alignment = TextAnchor.MiddleLeft;
+                y -= 48; shown++;
             }
-            _progressText.text = s;
+            if (shown == 0) UIFactory.Label(_progressContent, "Every goal complete — you're a legend!", 28, new Vector2(0, y), new Vector2(1000, 40), _font).color = new Color(1f, 0.85f, 0.4f);
+        }
+
+        void CompletionBar(string label, int pct, ref float y, Color col)
+        {
+            UIFactory.Label(_progressContent, label + "   " + pct + "%", 28, new Vector2(-460, y + 4), new Vector2(720, 40), _font).alignment = TextAnchor.MiddleLeft;
+            var bar = UIFactory.Panel(_progressContent, "cbg", new Color(0, 0, 0, 0.5f));
+            bar.sizeDelta = new Vector2(940, 22); bar.anchoredPosition = new Vector2(0, y - 30);
+            var fill = UIFactory.Panel(bar, "cf", col);
+            fill.anchorMin = new Vector2(0, 0); fill.anchorMax = new Vector2(Mathf.Clamp01(pct / 100f), 1); fill.offsetMin = fill.offsetMax = Vector2.zero;
+            y -= 74;
         }
 
         void BuildCollection(Transform parent)
@@ -511,10 +609,14 @@ namespace MTA.App
             var sp = _reg.Get(_detailSpecies);
             string evo = Progression.Evolve(_profile, sp);
             if (evo == null) return;
+            _profile.evolutionsDone++;
+            var newAch = Achievements.CheckNew(_profile, _roster.Count);
             SaveSystem.Save(_profile);
             _detailSpecies = evo;                            // now viewing the evolved form
             MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Evolution);
-            ShowPopup("EVOLUTION!", (sp != null ? sp.displayName : _detailSpecies) + "  evolved into\n" + _reg.Get(evo).displayName + "!");
+            string body = (sp != null ? sp.displayName : _detailSpecies) + "  evolved into\n" + _reg.Get(evo).displayName + "!";
+            foreach (var a in newAch) body += "\n\n★ Achievement: " + a.title;
+            ShowPopup("EVOLUTION!", body);
             RefreshDetail();
         }
 
@@ -573,8 +675,13 @@ namespace MTA.App
         {
             int gained = Progression.Train(_profile, _detailSpecies);
             if (gained < 0) { ShowPopup("NOT ENOUGH COINS", "Need " + Progression.TrainCost + " coins.\nWin battles to earn more."); return; }
+            _profile.trainingsDone++;
+            Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
+            _profile.dailyTrains++;
+            var newAch = Achievements.CheckNew(_profile, _roster.Count);
             SaveSystem.Save(_profile);
             if (gained > 0) { MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.LevelUp); var m = _profile.Find(_detailSpecies); ShowPopup("LEVEL UP!", Nice(_detailSpecies) + "  reached  Lv " + (m != null ? m.level : 1)); }
+            foreach (var a in newAch) ShowPopup("ACHIEVEMENT!", "★ " + a.title + "\n" + a.desc);
             RefreshDetail();
         }
 
@@ -743,9 +850,12 @@ namespace MTA.App
                 "A deterministic monster-raising auto-battler.\n\n" +
                 "CREDITS\n" +
                 "Design & Code:  Lifkie Lie\n" +
-                "Engine:  Unity " + Application.unityVersion + "\n" +
-                "Battle simulation:  MTA deterministic core\n\n" +
-                "MVP soft-launch candidate.",
+                "Engine:  Unity " + Application.unityVersion + "\n\n" +
+                "Art & audio (CC0):\n" +
+                "Monsters — isaiah658 (50+ Monsters Pack 2D)\n" +
+                "VFX — CodeManu · UI — Kenney\n" +
+                "Music — CleytonRX · SFX — rubberduck\n\n" +
+                "Thank you for playing!",
                 30, new Vector2(0, -20), new Vector2(1000, 1300), _font);
             body.alignment = TextAnchor.UpperCenter;
             UIFactory.Button(_about, "BACK", new Vector2(0, -890), new Vector2(400, 100), _font, () => _ctrl.ToSettings());
@@ -789,24 +899,252 @@ namespace MTA.App
             if (card != null) card.localScale = Vector3.one;
         }
 
-        void ShowNewMonster(List<string> ids) => ShowPopup("NEW MONSTER!", string.Join("\n", ids));
+        void ShowNewMonster(List<string> ids) => ShowPopup("NEW MONSTER!", NiceList(ids).Replace(", ", "\n"));
 
+        // ===================== Phase T — Onboarding =====================
+        Text _onbTitle, _onbBody; Button _onbNextBtn;
+        static readonly (string, string)[] OnbPages =
+        {
+            ("WELCOME, TRAINER!", "Raise monsters, build a team of THREE, and battle.\n\nBattles play out automatically — you pick the team, then watch the fight unfold."),
+            ("ELEMENTS", "Every monster has an element:\n\nFIRE  beats  NATURE\nNATURE  beats  WATER\nWATER  beats  FIRE\n\nPick monsters that counter the enemy."),
+            ("ROLES", "Monsters fill roles:\n\nTANK - soaks damage\nBRUISER - all-round\nASSASSIN - fast & deadly\nMAGE - ranged power\nSUPPORT - heals allies\n\nMix roles for a strong team."),
+            ("GROW STRONGER", "Win battles to earn XP and COINS.\n\nOpen a monster's detail and TRAIN it with coins to level it up faster."),
+            ("EVOLUTION", "At a high enough level, some monsters EVOLVE into a stronger form.\n\nTap EVOLVE on the detail screen when it lights up."),
+            ("GOALS & REWARDS", "Claim DAILY rewards, finish QUESTS, and earn ACHIEVEMENTS.\n\nDiscover every monster in the DEX.\n\nReady? Pick your first team and fight!"),
+        };
+        void BuildOnboarding(Transform parent)
+        {
+            _onboarding = UIFactory.Panel(parent, "OnbPanel", new Color(0.06f, 0.08f, 0.13f));
+            var card = UIFactory.Panel(_onboarding, "OnbCard", new Color(0.12f, 0.14f, 0.2f, 0.98f));
+            card.sizeDelta = new Vector2(940, 1000); card.anchoredPosition = new Vector2(0, 40);
+            _onbTitle = UIFactory.Label(card, "", 52, new Vector2(0, 380), new Vector2(880, 90), _font);
+            _onbTitle.color = new Color(1f, 0.85f, 0.4f);
+            _onbBody = UIFactory.Label(card, "", 34, new Vector2(0, 10), new Vector2(820, 620), _font);
+            _onbNextBtn = UIFactory.Button(card, "NEXT", new Vector2(0, -400), new Vector2(460, 110), _font, OnbNext);
+            UIFactory.Button(_onboarding, "SKIP", new Vector2(360, 900), new Vector2(240, 84), _font, OnbFinish);
+        }
+        void RefreshOnboarding()
+        {
+            _onbPage = Mathf.Clamp(_onbPage, 0, OnbPages.Length - 1);
+            _onbTitle.text = OnbPages[_onbPage].Item1;
+            _onbBody.text = OnbPages[_onbPage].Item2;
+            var t = _onbNextBtn.GetComponentInChildren<Text>();
+            if (t != null) t.text = _onbPage >= OnbPages.Length - 1 ? "START PLAYING" : "NEXT  (" + (_onbPage + 1) + "/" + OnbPages.Length + ")";
+        }
+        void OnbNext()
+        {
+            MTA.Battle.AudioManager.PlayClick();
+            if (_onbPage >= OnbPages.Length - 1) OnbFinish();
+            else { _onbPage++; RefreshOnboarding(); }
+        }
+        void OnbFinish()
+        {
+            _profile.onboarded = true; SaveSystem.Save(_profile);
+            _ctrl.StartGame();   // straight into first team selection
+        }
+
+        // ===================== Phase U — Quests =====================
+        void BuildQuests(Transform parent)
+        {
+            _quests = UIFactory.Panel(parent, "QuestsPanel", new Color(0.09f, 0.1f, 0.14f));
+            _questHeader = UIFactory.Label(_quests, "QUESTS", 46, new Vector2(0, 880), new Vector2(1000, 80), _font);
+            var holder = new GameObject("QContent", typeof(RectTransform));
+            _questContent = holder.GetComponent<RectTransform>(); _questContent.SetParent(_quests, false);
+            _questContent.anchorMin = _questContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _questContent.sizeDelta = new Vector2(1040, 1800); _questContent.anchoredPosition = new Vector2(0, -40);
+            UIFactory.Button(_quests, "BACK", new Vector2(0, -900), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+        void RefreshQuests()
+        {
+            Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
+            int ready = Quests.UnclaimedReady(_profile);
+            _questHeader.text = ready > 0 ? "QUESTS   (" + ready + " ready)" : "QUESTS";
+            for (int i = _questContent.childCount - 1; i >= 0; i--) Destroy(_questContent.GetChild(i).gameObject);
+            float y = 800f; QuestKind last = (QuestKind)(-1);
+            foreach (var def in Quests.Defs)
+            {
+                if (def.kind != last) { last = def.kind; UIFactory.Label(_questContent, def.kind.ToString().ToUpper(), 30, new Vector2(-470, y), new Vector2(500, 44), _font).color = new Color(0.6f, 0.75f, 1f); y -= 54; }
+                QuestRow(def, y); y -= 132;
+            }
+        }
+        void QuestRow(QuestDef def, float y)
+        {
+            int prog = Quests.Progress(_profile, def); bool done = Quests.IsComplete(_profile, def); bool claimed = Quests.IsClaimed(_profile, def);
+            var row = UIFactory.Panel(_questContent, "QRow", new Color(0.15f, 0.17f, 0.22f, 0.95f));
+            row.sizeDelta = new Vector2(1000, 118); row.anchoredPosition = new Vector2(0, y);
+            UIFactory.Label(row, def.title, 30, new Vector2(-150, 24), new Vector2(680, 44), _font).alignment = TextAnchor.MiddleLeft;
+            UIFactory.Label(row, prog + " / " + def.target + "     +" + def.coins + " coins", 24, new Vector2(-150, -26), new Vector2(680, 36), _font).alignment = TextAnchor.MiddleLeft;
+            // progress bar
+            var bar = UIFactory.Panel(row, "Bar", new Color(0, 0, 0, 0.5f));
+            bar.anchorMin = bar.anchorMax = new Vector2(0.5f, 0.5f); bar.sizeDelta = new Vector2(660, 12); bar.anchoredPosition = new Vector2(-160, -50);
+            var fill = UIFactory.Panel(bar, "Fill", new Color(0.35f, 0.85f, 0.4f));
+            fill.anchorMin = new Vector2(0, 0); fill.anchorMax = new Vector2(Mathf.Clamp01(prog / (float)def.target), 1); fill.offsetMin = fill.offsetMax = Vector2.zero;
+            if (claimed) UIFactory.Label(row, "CLAIMED", 28, new Vector2(360, 0), new Vector2(240, 80), _font).color = new Color(0.5f, 0.9f, 0.6f);
+            else
+            {
+                var b = UIFactory.Button(row, done ? "CLAIM" : "...", new Vector2(360, 0), new Vector2(240, 84), _font, () => ClaimQuest(def));
+                b.interactable = done;
+                UIFactory.SetButtonColor(b, done ? new Color(0.35f, 0.8f, 0.4f) : new Color(0.4f, 0.4f, 0.45f));
+            }
+        }
+        void ClaimQuest(QuestDef def)
+        {
+            if (Quests.Claim(_profile, def, out int coins, out int xp))
+            {
+                MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Reward);
+                SaveSystem.Save(_profile);
+                var newAch = Achievements.CheckNew(_profile, _roster.Count); if (newAch.Count > 0) SaveSystem.Save(_profile);
+                RefreshQuests();
+                string body = "+" + coins + " coins,  +" + xp + " XP";
+                foreach (var a in newAch) body += "\n★ Achievement: " + a.title;
+                ShowPopup("QUEST COMPLETE", body);
+            }
+        }
+
+        // ===================== Phase V — Achievements =====================
+        void BuildAchievements(Transform parent)
+        {
+            _achievements = UIFactory.Panel(parent, "AchPanel", new Color(0.1f, 0.09f, 0.13f));
+            _achHeader = UIFactory.Label(_achievements, "ACHIEVEMENTS", 46, new Vector2(0, 880), new Vector2(1000, 80), _font);
+            var holder = new GameObject("AContent", typeof(RectTransform));
+            _achContent = holder.GetComponent<RectTransform>(); _achContent.SetParent(_achievements, false);
+            _achContent.anchorMin = _achContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _achContent.sizeDelta = new Vector2(1040, 1900); _achContent.anchoredPosition = new Vector2(0, -40);
+            UIFactory.Button(_achievements, "BACK", new Vector2(0, -900), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+        void RefreshAchievements()
+        {
+            _achHeader.text = "ACHIEVEMENTS   " + Achievements.UnlockedCount(_profile) + " / " + Achievements.Defs.Length;
+            for (int i = _achContent.childCount - 1; i >= 0; i--) Destroy(_achContent.GetChild(i).gameObject);
+            float y = 800f;
+            foreach (var def in Achievements.Defs)
+            {
+                bool got = _profile.HasAchievement(def.id);
+                var row = UIFactory.Panel(_achContent, "ARow", got ? new Color(0.22f, 0.2f, 0.1f, 0.95f) : new Color(0.14f, 0.14f, 0.17f, 0.95f));
+                row.sizeDelta = new Vector2(1000, 128); row.anchoredPosition = new Vector2(0, y); y -= 144;
+                var medal = UIFactory.Label(row, got ? "★" : "?", 54, new Vector2(-420, 0), new Vector2(110, 110), _font);
+                medal.color = got ? new Color(1f, 0.82f, 0.3f) : new Color(0.4f, 0.4f, 0.45f);
+                var title = UIFactory.Label(row, def.title, 32, new Vector2(50, 24), new Vector2(760, 46), _font); title.alignment = TextAnchor.MiddleLeft;
+                title.color = got ? Color.white : new Color(0.6f, 0.6f, 0.66f);
+                var desc = UIFactory.Label(row, def.desc, 25, new Vector2(50, -24), new Vector2(760, 42), _font); desc.alignment = TextAnchor.MiddleLeft;
+                desc.color = new Color(0.7f, 0.72f, 0.8f);
+            }
+        }
+
+        // ===================== Phase W — Monster Dex =====================
+        void BuildDex(Transform parent)
+        {
+            _dex = UIFactory.Panel(parent, "DexPanel", new Color(0.08f, 0.1f, 0.12f));
+            _dexHeader = UIFactory.Label(_dex, "MONSTER DEX", 46, new Vector2(0, 880), new Vector2(1000, 80), _font);
+            var holder = new GameObject("DexContent", typeof(RectTransform));
+            _dexContent = holder.GetComponent<RectTransform>(); _dexContent.SetParent(_dex, false);
+            _dexContent.anchorMin = _dexContent.anchorMax = new Vector2(0.5f, 0.5f);
+            _dexContent.sizeDelta = new Vector2(1040, 1900); _dexContent.anchoredPosition = new Vector2(0, -30);
+            // detail overlay (hidden until a discovered species is tapped)
+            _dexDetail = UIFactory.Panel(_dex, "DexDetail", new Color(0.1f, 0.12f, 0.16f, 0.99f));
+            _dexDetail.sizeDelta = new Vector2(960, 1500); _dexDetail.anchoredPosition = new Vector2(0, 20);
+            _dexDetail.gameObject.SetActive(false);
+            UIFactory.Button(_dex, "BACK", new Vector2(0, -900), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
+        }
+        void RefreshDex()
+        {
+            _dexDetail.gameObject.SetActive(false);
+            int disc = Achievements.Discovered(_profile);
+            _dexHeader.text = "MONSTER DEX   " + disc + " / " + _roster.Count + "   (" + (_roster.Count > 0 ? disc * 100 / _roster.Count : 0) + "%)";
+            for (int i = _dexContent.childCount - 1; i >= 0; i--) Destroy(_dexContent.GetChild(i).gameObject);
+            const int cols = 3; float tw = 330, th = 202, gx = 12, gy = 12;
+            float x0 = -(cols - 1) * (tw + gx) / 2f, y0 = 720;
+            for (int i = 0; i < _roster.Count; i++)
+            {
+                string id = _roster[i]; var sp = _reg.Get(id); bool seen = _profile.IsSeen(id);
+                int c = i % cols, r = i / cols;
+                var tile = UIFactory.Panel(_dexContent, "DexTile", new Color(0.15f, 0.16f, 0.2f, 0.95f));
+                tile.sizeDelta = new Vector2(tw, th); tile.anchoredPosition = new Vector2(x0 + c * (tw + gx), y0 - r * (th + gy));
+                UIFactory.Label(tile, "#" + (i + 1).ToString("D2"), 20, new Vector2(-tw / 2 + 34, th / 2 - 22), new Vector2(80, 30), _font).color = new Color(0.6f, 0.6f, 0.7f);
+                if (seen)
+                {
+                    var art = Portrait(tile, id, sp, 116); art.anchoredPosition = new Vector2(0, 26);
+                    UIFactory.Label(tile, Nice(id), 24, new Vector2(0, -54), new Vector2(tw - 16, 32), _font);
+                    UIFactory.ElementBadge(tile, sp.element, new Vector2(tw / 2 - 32, th / 2 - 30), 42, _font);
+                    UIFactory.StarRow(tile, MonsterMeta.Rarity(sp), new Vector2(0, -80), 15f);
+                    string cid = id; var btn = tile.gameObject.AddComponent<Button>();
+                    btn.onClick.AddListener(MTA.Battle.AudioManager.PlayClick);
+                    btn.onClick.AddListener(() => ShowDexDetail(cid));
+                }
+                else
+                {
+                    var silo = MTA.Battle.MonsterArt.Build(tile, "dex_" + id, "", "Bruiser", 104);
+                    silo.anchoredPosition = new Vector2(0, 26); silo.gameObject.AddComponent<CanvasGroup>().alpha = 0.14f;
+                    UIFactory.Label(tile, "???", 26, new Vector2(0, -54), new Vector2(tw - 16, 32), _font).color = new Color(0.5f, 0.5f, 0.55f);
+                }
+            }
+        }
+        void ShowDexDetail(string id)
+        {
+            var sp = _reg.Get(id); if (sp == null) return;
+            for (int i = _dexDetail.childCount - 1; i >= 0; i--) Destroy(_dexDetail.GetChild(i).gameObject);
+            _dexDetail.gameObject.SetActive(true); _dexDetail.SetAsLastSibling();
+            UIFactory.Label(_dexDetail, Nice(id), 46, new Vector2(0, 660), new Vector2(900, 80), _font).color = new Color(1f, 0.85f, 0.4f);
+            var art = Portrait(_dexDetail, id, sp, 300); art.anchoredPosition = new Vector2(0, 400);
+            UIFactory.ElementBadge(_dexDetail, sp.element, new Vector2(-360, 560), 60, _font);
+            UIFactory.StarRow(_dexDetail, MonsterMeta.Rarity(sp), new Vector2(0, 180), 34f);
+            UIFactory.Label(_dexDetail, "Element:  " + sp.element + "        Role:  " + MonsterMeta.Role(sp), 30, new Vector2(0, 110), new Vector2(880, 44), _font);
+            var bs = sp.baseStats;
+            string stats = "HP " + bs.hp + "    ATK " + bs.atk + "    DEF " + bs.def + "\nSPD " + bs.spd + "    INT " + bs.intel + "    LUCK " + bs.luck;
+            UIFactory.Label(_dexDetail, stats, 30, new Vector2(0, 10), new Vector2(880, 100), _font);
+            // evolution chain
+            string chain = Nice(id);
+            if (!string.IsNullOrEmpty(sp.evolvesTo)) chain += "   →   " + Nice(sp.evolvesTo) + "  (Lv " + sp.evolveLevel + ")";
+            UIFactory.Label(_dexDetail, "Evolution:  " + chain, 28, new Vector2(0, -110), new Vector2(880, 44), _font).color = new Color(0.7f, 0.9f, 0.75f);
+            UIFactory.Label(_dexDetail, _profile.IsUnlocked(id) ? "OWNED" : "SEEN", 30, new Vector2(0, -200), new Vector2(880, 44), _font)
+                .color = _profile.IsUnlocked(id) ? new Color(0.5f, 1f, 0.6f) : new Color(0.9f, 0.9f, 0.5f);
+            UIFactory.Button(_dexDetail, "CLOSE", new Vector2(0, -560), new Vector2(360, 100), _font, () => _dexDetail.gameObject.SetActive(false));
+        }
+
+        Text _menuWallet;
         void BuildMenu(Transform parent)
         {
             _menu = UIFactory.Panel(parent, "MenuPanel", new Color(0.08f, 0.09f, 0.12f));
-            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 540), new Vector2(1000, 100), _font);
-            UIFactory.Label(_menu, "first playable", 28, new Vector2(0, 462), new Vector2(1000, 60), _font);
-            UIFactory.Button(_menu, "PLAY", new Vector2(0, 350), new Vector2(400, 96), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "CAREER", new Vector2(0, 238), new Vector2(400, 96), _font, () => _ctrl.ToCareer());
-            UIFactory.Button(_menu, "DAILY", new Vector2(0, 126), new Vector2(400, 96), _font, () => _ctrl.ToDaily());
-            if (_hadSave)
-                UIFactory.Button(_menu, "CONTINUE", new Vector2(0, 14), new Vector2(400, 96), _font, () => _ctrl.StartGame());
-            UIFactory.Button(_menu, "PROGRESS", new Vector2(0, -98), new Vector2(400, 96), _font, () => _ctrl.ToProgress());
-            UIFactory.Button(_menu, "COLLECTION", new Vector2(0, -210), new Vector2(400, 96), _font, () => _ctrl.ToCollection());
-            UIFactory.Button(_menu, "SETTINGS", new Vector2(0, -322), new Vector2(400, 96), _font, () => _ctrl.ToSettings());
-            UIFactory.Button(_menu, "QUIT", new Vector2(0, -434), new Vector2(400, 90), _font, Quit);
-            UIFactory.Label(_menu, "v" + Application.version, 24, new Vector2(0, -560), new Vector2(600, 44), _font)
-                .color = new Color(0.55f, 0.55f, 0.65f);
+            UIFactory.Label(_menu, "TRAIN YOUR MONSTER", 56, new Vector2(0, 760), new Vector2(1000, 100), _font);
+            UIFactory.Label(_menu, "Raise. Evolve. Conquer.", 28, new Vector2(0, 686), new Vector2(1000, 60), _font)
+                .color = new Color(0.75f, 0.8f, 0.95f);
+            _menuWallet = UIFactory.Label(_menu, "", 30, new Vector2(0, 612), new Vector2(1000, 50), _font);
+            _menuWallet.color = new Color(1f, 0.85f, 0.35f);
+
+            // Big PLAY, then a 2-column grid of the rest.
+            UIFactory.Button(_menu, "PLAY", new Vector2(0, 500), new Vector2(560, 110), _font, () => _ctrl.StartGame());
+            var grid = new (string, System.Action)[]
+            {
+                ("CAREER", () => _ctrl.ToCareer()),
+                ("QUESTS", () => _ctrl.ToQuests()),
+                ("DAILY", () => _ctrl.ToDaily()),
+                ("COLLECTION", () => _ctrl.ToCollection()),
+                ("MONSTER DEX", () => _ctrl.ToDex()),
+                ("ACHIEVEMENTS", () => _ctrl.ToAchievements()),
+                ("PROGRESS", () => _ctrl.ToProgress()),
+                ("SETTINGS", () => _ctrl.ToSettings()),
+            };
+            for (int i = 0; i < grid.Length; i++)
+            {
+                float x = (i % 2 == 0) ? -200f : 200f;
+                float y = 366f - (i / 2) * 116f;
+                var b = UIFactory.Button(_menu, grid[i].Item1, new Vector2(x, y), new Vector2(380, 100), _font, grid[i].Item2);
+                if (grid[i].Item1 == "QUESTS") _menuQuestBtn = b;
+            }
+            UIFactory.Button(_menu, "QUIT", new Vector2(0, -540), new Vector2(360, 88), _font, Quit);
+            UIFactory.Label(_menu, "v" + Application.version, 24, new Vector2(0, -650), new Vector2(600, 44), _font)
+                .color = new Color(0.5f, 0.5f, 0.6f);
+        }
+
+        void RefreshMenuBadges()
+        {
+            if (_menuWallet != null) _menuWallet.text = "Lv " + _profile.playerLevel + "     " + _profile.coins + " coins";
+            if (_menuQuestBtn != null)
+            {
+                int ready = Quests.UnclaimedReady(_profile);
+                var t = _menuQuestBtn.GetComponentInChildren<Text>();
+                if (t != null) t.text = ready > 0 ? "QUESTS  (" + ready + ")" : "QUESTS";
+            }
         }
 
         void BuildSelect(Transform parent, List<string> pool)
@@ -831,6 +1169,27 @@ namespace MTA.App
 
             _startBtn = UIFactory.Button(_select, "START BATTLE", new Vector2(0, -820), new Vector2(520, 110),
                 _font, OnStartBattle);
+            UIFactory.Label(_select, "Pick 3 monsters to begin", 24, new Vector2(0, 636), new Vector2(700, 40), _font)
+                .color = new Color(0.7f, 0.72f, 0.8f);
+            UIFactory.Button(_select, "BACK", new Vector2(0, -958), new Vector2(360, 88), _font,
+                () => { if (_ctrl.InCareer) _ctrl.ToCareer(); else _ctrl.BackToMenu(); });
+        }
+
+        // Android hardware-back / Esc → phase-appropriate navigation.
+        void Update()
+        {
+            if (!Input.GetKeyDown(KeyCode.Escape)) return;
+            if (_popup != null && _popup.gameObject.activeSelf) { _popup.gameObject.SetActive(false); return; }
+            if (_dexDetail != null && _dexDetail.gameObject.activeSelf) { _dexDetail.gameObject.SetActive(false); return; }
+            switch (_ctrl.Flow.Phase)
+            {
+                case GamePhase.MainMenu: case GamePhase.Battle: case GamePhase.Onboarding: break;
+                case GamePhase.Detail: _ctrl.ToCollection(); break;
+                case GamePhase.About: _ctrl.ToSettings(); break;
+                case GamePhase.TeamSelect: if (_ctrl.InCareer) _ctrl.ToCareer(); else _ctrl.BackToMenu(); break;
+                case GamePhase.Result: _ctrl.ToMenu(); break;
+                default: _ctrl.BackToMenu(); break;
+            }
         }
 
         void BuildBattle(Transform parent)

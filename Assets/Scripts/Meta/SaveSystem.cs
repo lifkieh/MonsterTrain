@@ -23,6 +23,10 @@ namespace MTA.Meta
                 if (d.seen == null) d.seen = new System.Collections.Generic.List<string>();
                 if (d.rewardHistory == null) d.rewardHistory = new System.Collections.Generic.List<string>();
                 if (d.collection == null) d.collection = new System.Collections.Generic.List<MonsterSave>();
+                // v2 lists (old saves lack these — default them so nothing NPEs).
+                if (d.quests == null) d.quests = new System.Collections.Generic.List<QuestState>();
+                if (d.achievements == null) d.achievements = new System.Collections.Generic.List<string>();
+                if (d.seenNews == null) d.seenNews = new System.Collections.Generic.List<string>();
                 Migrate(d);
                 return d;
             }
