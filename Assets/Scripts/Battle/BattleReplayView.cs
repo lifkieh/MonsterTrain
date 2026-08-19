@@ -220,6 +220,7 @@ namespace MTA.Battle
                 v.Build(_stage, anchor, size, teamColor, speciesColor,
                     u.speciesId, dn, _font, elem, role, u.team == 0);
                 v.SetReserve(false);                    // brawl: everyone full-size, on stage
+                v.SetWeight(RoleWeight(role));          // heft by role (presentation only)
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
                 int k = Key(u.team, u.slot);
@@ -651,6 +652,8 @@ namespace MTA.Battle
                         dv.Knock(knock, b.knockback); dv.Launch(b.endsBattle ? 170f : 130f);   // launch + spin + fade (no run-in)
                         dv.PlayDeath(knock);
                         _vfx.Play("explosion", dv.BasePos, b.endsBattle ? 340f : 240f, Color.white);
+                        string kosp = _speciesByKey.TryGetValue(Key(e.targetTeam, e.targetSlot), out var ksp) ? ksp : "";
+                        _elem.Burst(Elem(kosp), dv.BasePos, b.endsBattle ? 380f : 270f, ElemFx.KO);   // KO = biggest element beat
                         _arena?.React(b.endsBattle ? ArenaReact.KO : ArenaReact.Debris, Ground(dv.BasePos));   // full arena reaction on the finisher
                         CrowdFlinch(Key(e.targetTeam, e.targetSlot), -1, -1, dv.BasePos, 280f);   // scrum recoils from the KO
                         CamPush(knock, b.endsBattle ? 60f : 44f);   // camera lurches with the KO
@@ -1199,6 +1202,19 @@ namespace MTA.Battle
 
         // Element of a species (for element-signature VFX routing), "" when unknown.
         string Elem(string sp) => (sp != null && elementNames != null && elementNames.TryGetValue(sp, out var e)) ? e : "";
+        // Role → animation heft. Tanks plod, assassins/mages dart. Presentation only.
+        static float RoleWeight(string role)
+        {
+            switch (role)
+            {
+                case "Tank": return 1.4f;
+                case "Bruiser": return 1.12f;
+                case "Support": return 1.0f;
+                case "Mage": return 0.85f;
+                case "Assassin": return 0.78f;
+                default: return 1.0f;
+            }
+        }
         // Element-shaped projectile head, so ranged shots read as their element.
         static Sprite ElemSprite(string element)
         {

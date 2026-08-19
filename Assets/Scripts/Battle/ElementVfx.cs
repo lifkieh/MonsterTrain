@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 namespace MTA.Battle
 {
-    public enum ElemFx { Cast, Impact, Ultimate, Heal }
+    public enum ElemFx { Cast, Impact, Ultimate, Heal, KO }
 
     // Element-signature battle VFX (Final Combat Presentation pass).
     //
@@ -43,15 +43,39 @@ namespace MTA.Battle
         // Element/kind → a composed burst of signature particles at a stage-local position.
         public void Burst(string element, Vector2 pos, float size, ElemFx kind)
         {
-            float u = kind == ElemFx.Ultimate ? 1.7f : kind == ElemFx.Cast ? 0.9f : 1f;   // energy scale
+            bool ko = kind == ElemFx.KO;
+            float u = ko ? 2.2f : kind == ElemFx.Ultimate ? 1.7f : kind == ElemFx.Cast ? 0.9f : 1f;   // energy scale
+            ElemFx ek = ko ? ElemFx.Ultimate : kind;   // element methods treat KO as an ultimate-scale burst
             switch (Norm(element, kind))
             {
-                case "Fire":    Fire(pos, size, u, kind); break;
-                case "Water":   Water(pos, size, u, kind); break;
-                case "Nature":  Nature(pos, size, u, kind); break;
-                case "Lightning": Lightning(pos, size, u, kind); break;
+                case "Fire":    Fire(pos, size, u, ek); break;
+                case "Water":   Water(pos, size, u, ek); break;
+                case "Nature":  Nature(pos, size, u, ek); break;
+                case "Lightning": Lightning(pos, size, u, ek); break;
                 case "Heal":    Heal(pos, size, u); break;
                 default:        Neutral(pos, size, u); break;
+            }
+            if (ko)
+            {
+                // KO signature — the biggest beat: a white shockwave + an element ring + a
+                // burst of debris/embers thrown outward. Layered on top of the element burst.
+                Emit(ProceduralArt.Ring(), pos, size * 0.85f, Vector2.zero, 0f, 0.3f, 13f, 0.55f, 0f, 1, new Color(1f, 1f, 1f, 0.9f));
+                var acc = Accent(element);
+                Emit(ProceduralArt.Ring(), pos, size * 0.85f, Vector2.zero, 0f, 0.3f, 9f, 0.5f, 0f, 1, acc);
+                for (int i = 0; i < 12; i++)
+                    Emit(ProceduralArt.Triangle(), pos + R2(20, 12), size * 0.2f, new Vector2(R1(280), 160f + R0(240f)), 240f, 0.6f, 1.1f, 0.7f, R1(560), 0, acc);
+            }
+        }
+
+        static Color Accent(string element)
+        {
+            switch (element)
+            {
+                case "Fire": return new Color(1f, 0.55f, 0.18f, 0.85f);
+                case "Water": return new Color(0.5f, 0.82f, 1f, 0.85f);
+                case "Nature": return new Color(0.55f, 0.95f, 0.45f, 0.85f);
+                case "Lightning": return new Color(1f, 1f, 0.6f, 0.85f);
+                default: return new Color(1f, 0.85f, 0.5f, 0.85f);
             }
         }
 

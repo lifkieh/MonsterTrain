@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,6 +19,11 @@ namespace MTA.Battle
         RectTransform[] _parts; Image[] _partImg; Vector2[] _vel; float _drift;
         string _element; Color _accent; float _partDir;
         Image _flash; float _flashA;
+
+        // Animated ground/biome features (lava-crack pulse, water ripples, grass sway).
+        // mode: 0 = colour pulse, 1 = ripple ring expand-loop, 2 = sway rotate.
+        RectTransform[] _gf; Image[] _gfImg; int[] _gfMode; float[] _gfPh; Color[] _gfCol; float[] _gfBase;
+        RectTransform _biome; Vector2 _biomeHome;
 
         // Reactive impact pool (parallel arrays = cache-friendly, zero per-spawn alloc).
         const int RP = 40;
@@ -69,17 +75,23 @@ namespace MTA.Battle
             Panel(_near, "PillarL", pil, new Vector2(120, 900), new Vector2(-520, -180));
             Panel(_near, "PillarR", pil, new Vector2(120, 900), new Vector2(520, -180));
 
-            Panel(_root, "Ground", groundCol, new Vector2(1200, 520), new Vector2(0, -700));
-            _floor = Panel(_root, "Floor", floorCol, new Vector2(980, 10), new Vector2(0, -430));
-            _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.6f, floorCol.g * 1.6f, floorCol.b * 1.6f);
+            // Distant biome silhouettes (volcano cones / sea horizon / tree line) in front of
+            // the tinted backdrop, so the DISTANCE reads as the element, not just a colour wash.
+            BuildElementFar(element, mtnCol, groundCol, partCol);
 
-            // Battle ground pad — a soft, wide shelf beneath the fighters so they read as
-            // PLANTED on a surface (not floating) and the lower third of the frame isn't a
-            // dead void. Sits above the far ground band, below the fighters + their shadows.
-            var pad = Panel(_root, "GroundPad", new Color(floorCol.r * 1.15f, floorCol.g * 1.15f, floorCol.b * 1.15f, 0.9f), new Vector2(1280, 470), new Vector2(0, -230));
-            pad.GetComponent<Image>().sprite = ProceduralArt.Glow();
-            var rim = Panel(_root, "GroundRim", new Color(floorCol.r * 2.0f, floorCol.g * 2.0f, floorCol.b * 2.0f, 0.55f), new Vector2(1060, 120), new Vector2(0, -120));
-            rim.GetComponent<Image>().sprite = ProceduralArt.Glow();
+            // ---- Ground: a receding TERRAIN plane, not a glow pad ----
+            // Three tone bands (far-dark → near-light) read as a floor you stand ON; a bright
+            // near lip marks the front standing edge; element ground features (below) give the
+            // surface real identity — lava cracks, shallow water, or grass — with parallax depth.
+            Panel(_root, "Ground", groundCol, new Vector2(1200, 520), new Vector2(0, -700));
+            Panel(_root, "GroundFar",  Lift(groundCol, 0.82f), new Vector2(1340, 320), new Vector2(0, -430));
+            Panel(_root, "GroundMid",  Lift(groundCol, 1.12f), new Vector2(1340, 260), new Vector2(0, -235));
+            Panel(_root, "GroundNear", Lift(groundCol, 1.42f), new Vector2(1340, 250), new Vector2(0, -55));
+            _floor = Panel(_root, "Floor", floorCol, new Vector2(980, 8), new Vector2(0, -430));
+            _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.6f, floorCol.g * 1.6f, floorCol.b * 1.6f);
+            Panel(_root, "GroundLip", Lift(floorCol, 2.1f), new Vector2(1360, 10), new Vector2(0, 62));   // bright near standing edge
+
+            BuildElementGround(element, groundCol, floorCol, partCol);
 
             // Foreground silhouette layer — darkest, strongest parallax (depth).
             _fore = Layer("Fore");
@@ -259,6 +271,36 @@ namespace MTA.Battle
             if (water && _floor != null) _floor.anchoredPosition = _floorHome + new Vector2(Mathf.Sin(_drift * 1.5f) * 8f, 0f);
             if (fire && _backdrop != null) _backdrop.anchoredPosition = _backdropHome + new Vector2(Mathf.Sin(_drift * 3.2f) * 4f, 0f);   // heat shimmer
             if (_mist != null) _mist.anchoredPosition = new Vector2(Mathf.Sin(_drift * 0.4f) * 60f, -320f + Mathf.Sin(_drift * 0.7f) * 20f);
+
+            // animated ground features: lava glow pulse / water ripple loop / grass sway
+            if (_gf != null)
+                for (int i = 0; i < _gf.Length; i++)
+                {
+                    if (_gf[i] == null) continue;
+                    var col = _gfCol[i];
+                    switch (_gfMode[i])
+                    {
+                        case 0:   // lava pulse
+                            {
+                                float pulse = 0.65f + 0.35f * Mathf.Abs(Mathf.Sin(_drift * 2.1f + _gfPh[i]));
+                                _gfImg[i].color = new Color(col.r, col.g, col.b, col.a * pulse);
+                                break;
+                            }
+                        case 1:   // ripple ring expand-loop
+                            {
+                                float tt = (_drift * 0.55f + _gfPh[i]) % 1f;
+                                _gf[i].localScale = Vector3.one * Mathf.Lerp(0.2f, 1.7f, tt);
+                                _gfImg[i].color = new Color(col.r, col.g, col.b, col.a * (1f - tt));
+                                break;
+                            }
+                        case 2:   // grass sway
+                            {
+                                float sway = Mathf.Sin(_drift * 1.5f + _gfBase[i] * 0.02f) * 7f + Mathf.Sin(_drift * 0.6f) * 5f;
+                                _gf[i].localRotation = Quaternion.Euler(0, 0, sway);
+                                break;
+                            }
+                    }
+                }
         }
 
         static void Theme(string e, out Color skyTop, out Color skyHor, out Color mtn, out Color ground, out Color floor, out Color part, out float partDir)
@@ -289,6 +331,7 @@ namespace MTA.Battle
             if (_far != null) _far.anchoredPosition = _farHome - cam * 0.03f;
             if (_near != null) _near.anchoredPosition = _nearHome - cam * 0.09f;
             if (_fore != null) _fore.anchoredPosition = _foreHome - cam * 0.17f;   // foreground moves most
+            if (_biome != null) _biome.anchoredPosition = _biomeHome - cam * 0.05f;
             if (_backdrop != null && _element != "Fire") _backdrop.anchoredPosition = _backdropHome - cam * 0.02f;
         }
 
@@ -298,6 +341,107 @@ namespace MTA.Battle
         static float R0(float m) => UnityEngine.Random.value * m;
         static float R1(float m) => (UnityEngine.Random.value * 2f - 1f) * m;
         static Vector2 R2(float mx, float my) => new Vector2(R1(mx), R1(my));
+
+        static Color Lift(Color c, float m) => new Color(c.r * m, c.g * m, c.b * m, 1f);
+
+        // Distant biome behind the ground — sells the element at the horizon: fire = dark
+        // volcano cones with glowing craters, water = a sea line with wave bands, nature = a
+        // layered tree line. Slow parallax so it reads as far away.
+        void BuildElementFar(string e, Color mtn, Color ground, Color accent)
+        {
+            _biome = Layer("Biome");
+            switch (e)
+            {
+                case "Fire":
+                    var rock = new Color(0.20f, 0.09f, 0.07f, 1f);
+                    Cone(_biome, rock, 430, new Vector2(-250, -300));
+                    Cone(_biome, rock, 360, new Vector2(300, -330));
+                    Blob(_biome, new Color(1f, 0.5f, 0.16f, 0.8f), 70, new Vector2(-250, -110));   // glowing crater
+                    Blob(_biome, new Color(1f, 0.6f, 0.2f, 0.7f), 48, new Vector2(300, -175));
+                    break;
+                case "Water":
+                    Panel(_biome, "Sea", new Color(0.10f, 0.30f, 0.50f, 0.92f), new Vector2(1360, 210), new Vector2(0, -300));
+                    for (int i = 0; i < 4; i++)
+                        Panel(_biome, "Wave", new Color(0.6f, 0.85f, 1f, 0.22f), new Vector2(1220, 8), new Vector2(0, -230 - i * 34));
+                    break;
+                case "Nature":
+                    var tree = new Color(0.10f, 0.22f, 0.11f, 0.95f);
+                    float[] tx = { -470, -300, -150, 20, 180, 330, 470 };
+                    for (int i = 0; i < tx.Length; i++) Tree(_biome, Lift(tree, 0.85f + (i % 3) * 0.12f), 210 + (i % 3) * 70, new Vector2(tx[i], -300));
+                    break;
+            }
+            _biomeHome = _biome != null ? _biome.anchoredPosition : Vector2.zero;
+        }
+
+        // Ground surface features across three depth rows (near = lower + bigger). Fire =
+        // pulsing lava cracks + scorched rocks + lava-pool glows; Water = reflective sheen +
+        // expanding ripples + caustics; Nature = swaying grass tufts + flowers. Animated ones
+        // are stored for the ambient tick.
+        void BuildElementGround(string e, Color ground, Color floor, Color accent)
+        {
+            var feats = new List<(RectTransform rt, Image img, int mode, Color col, float basev)>();
+            var seed = new System.Random(("g" + e).GetHashCode());
+            float[] rowY = { -110f, -235f, -360f };
+            float[] rs = { 1.25f, 1.0f, 0.72f };
+            float RD() => (float)seed.NextDouble();
+            switch (e)
+            {
+                case "Fire":
+                    for (int r = 0; r < 3; r++)
+                        for (int k = 0; k < 3; k++)
+                        {
+                            float x = -420 + k * 420 + RD() * 120 - 60;
+                            var c = Panel(_root, "Lava", new Color(1f, 0.45f, 0.12f, 0.9f), new Vector2(240 * rs[r], 26 * rs[r]), new Vector2(x, rowY[r]));
+                            var img = c.GetComponent<Image>(); img.sprite = ProceduralArt.Bolt(); c.localRotation = Quaternion.Euler(0, 0, 90f);
+                            feats.Add((c, img, 0, img.color, x));
+                        }
+                    for (int i = 0; i < 7; i++) Diamond(_root, new Color(0.12f, 0.07f, 0.06f, 0.95f), 40f + RD() * 40f, new Vector2(RD() * 1200 - 600, rowY[seed.Next(3)] + RD() * 30 - 15));
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var g = Panel(_root, "Pool", new Color(1f, 0.4f, 0.1f, 0.35f), new Vector2(160, 62), new Vector2(RD() * 1000 - 500, rowY[seed.Next(3)]));
+                        var img = g.GetComponent<Image>(); img.sprite = ProceduralArt.Glow(); feats.Add((g, img, 0, img.color, i * 40f));
+                    }
+                    break;
+                case "Water":
+                    var sheen = Panel(_root, "Sheen", new Color(0.5f, 0.8f, 1f, 0.14f), new Vector2(1220, 300), new Vector2(0, -130));
+                    sheen.GetComponent<Image>().sprite = ProceduralArt.Glow();
+                    for (int i = 0; i < 5; i++)
+                    {
+                        var ring = Panel(_root, "Ripple", new Color(0.72f, 0.9f, 1f, 0.5f), new Vector2(130, 130), new Vector2(RD() * 1000 - 500, rowY[seed.Next(3)]));
+                        var img = ring.GetComponent<Image>(); img.sprite = ProceduralArt.Ring(); feats.Add((ring, img, 1, img.color, RD()));
+                    }
+                    for (int r = 0; r < 3; r++)
+                        for (int k = 0; k < 4; k++)
+                            Panel(_root, "Caustic", new Color(0.8f, 0.95f, 1f, 0.22f), new Vector2(90 * rs[r], 9 * rs[r]), new Vector2(-450 + k * 300 + RD() * 40, rowY[r] + 20));
+                    break;
+                case "Nature":
+                    for (int r = 0; r < 3; r++)
+                        for (int k = 0; k < 7; k++)
+                        {
+                            float x = -480 + k * 160 + RD() * 60 - 30;
+                            var g = Panel(_root, "Grass", new Color(0.26f + 0.12f * RD(), 0.55f, 0.22f, 0.95f), new Vector2(34 * rs[r], 64 * rs[r]), new Vector2(x, rowY[r] + 14 * rs[r]));
+                            var img = g.GetComponent<Image>(); img.sprite = ProceduralArt.Triangle(); feats.Add((g, img, 2, img.color, x));
+                        }
+                    for (int i = 0; i < 10; i++)
+                    {
+                        var fcol = i % 3 == 0 ? new Color(1f, 0.82f, 0.32f) : i % 3 == 1 ? new Color(1f, 0.5f, 0.72f) : new Color(0.9f, 0.9f, 1f);
+                        var fl = Panel(_root, "Flower", fcol, new Vector2(16, 16), new Vector2(RD() * 1100 - 550, rowY[seed.Next(3)] + 8));
+                        fl.GetComponent<Image>().sprite = ProceduralArt.Disc();
+                    }
+                    break;
+            }
+            int m = feats.Count;
+            _gf = new RectTransform[m]; _gfImg = new Image[m]; _gfMode = new int[m]; _gfPh = new float[m]; _gfCol = new Color[m]; _gfBase = new float[m];
+            for (int i = 0; i < m; i++)
+            {
+                _gf[i] = feats[i].rt; _gfImg[i] = feats[i].img; _gfMode[i] = feats[i].mode; _gfCol[i] = feats[i].col; _gfBase[i] = feats[i].basev;
+                _gfPh[i] = feats[i].basev * 0.02f + i * 0.6f;
+            }
+        }
+
+        void Cone(RectTransform parent, Color c, float size, Vector2 pos) { var rt = Panel(parent, "Cone", c, new Vector2(size, size), pos); rt.GetComponent<Image>().sprite = ProceduralArt.Triangle(); }
+        void Tree(RectTransform parent, Color c, float h, Vector2 pos) { var rt = Panel(parent, "Tree", c, new Vector2(h * 0.7f, h), pos); rt.GetComponent<Image>().sprite = ProceduralArt.Triangle(); }
+        void Blob(RectTransform parent, Color c, float size, Vector2 pos) { var rt = Panel(parent, "Blob", c, new Vector2(size, size), pos); rt.GetComponent<Image>().sprite = ProceduralArt.Glow(); }
 
         RectTransform Layer(string name)
         {

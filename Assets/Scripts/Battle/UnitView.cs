@@ -33,6 +33,7 @@ namespace MTA.Battle
         float _impSilT;                                     // impact-frame white silhouette
         float _extraTilt;                                   // hit head-snap rotation (decays)
         float _roamFactor;                                  // idle-wander blend (0 busy → 1 at rest)
+        float _weight = 1f;                                 // heft: heavy = ponderous/plodding, light = springy/darty
 
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
@@ -147,6 +148,7 @@ namespace MTA.Battle
         public void Launch(float strength) { if (_dead) return; _impulse += new Vector2(0f, strength); }
         public void Dodge(Vector2 dir) { if (_dead) return; _impulse += dir.normalized * 80f; _anim = Anim.Hit; _animTime = 0; _animDur = 0.24f; _animMag = 0.4f; }
         public void SetReserve(bool r) { _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f; }
+        public void SetWeight(float w) { _weight = Mathf.Clamp(w, 0.6f, 1.6f); }   // role-driven heft (presentation only)
         public void SetElement(Color c)
         {
             if (_rt == null) return;
@@ -183,7 +185,7 @@ namespace MTA.Battle
             float scy = sq.y * (1f + ay - ax * 0.5f);
             float rot;
             if (_spinT > 0f) { _spinT -= dt; _spinAngle += _spinSpeed * dt; rot = _spinAngle; }
-            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f, -14f, 14f) * _mirror; }
+            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f * _weight, -16f, 16f) * _mirror; }   // heavier bodies lean harder into motion
             rot += _extraTilt; _extraTilt = Mathf.MoveTowards(_extraTilt, 0f, 120f * dt);   // hit head-snap settles
             Vector2 vib = Vector2.zero;
             if (_vibT > 0f) { _vibT -= dt; float tt = Time.time; vib = new Vector2(Mathf.Sin(tt * 90f) * _vibMag, Mathf.Cos(tt * 78f) * _vibMag * 0.5f); }
@@ -242,9 +244,11 @@ namespace MTA.Battle
             }
 
             float t = Time.time;
-            float bob = _victory ? 12f : 4f;
-            Vector2 idle = new Vector2(0, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.2f) + _basePos.x * 0.01f)) * bob);
-            float breathe = 1f + Mathf.Sin(t * 3f + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.03f);
+            // Weight sell: light monsters bounce fast + springy, heavy ones plod slow + settled.
+            float light = Mathf.Lerp(1.28f, 0.72f, Mathf.InverseLerp(0.6f, 1.6f, _weight));
+            float bob = (_victory ? 12f : 4f) * (_victory ? 1f : light);
+            Vector2 idle = new Vector2(0, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.2f * light) + _basePos.x * 0.01f)) * bob);
+            float breathe = 1f + Mathf.Sin(t * 3f * light + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.03f * light);
             Vector2 animOff = Vector2.zero; float animScale = 1f;
             Color flashC = new Color(1f, 1f, 1f, 0f);
 
@@ -258,6 +262,7 @@ namespace MTA.Battle
                         // anticipation crouch → explosive lunge → follow-through overshoot → settle
                         animOff = _animDir * (AttackCurve(p) * _animDist);
                         if (_animUlt) animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
+                        animScale *= 1f + Mathf.Sin(p * Mathf.PI) * 0.06f * (_weight - 1f);   // heavy bodies pop harder on the swing
                         break;
                     case Anim.Hit:
                         animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * _animMag, 0f);
