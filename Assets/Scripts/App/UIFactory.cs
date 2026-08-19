@@ -34,6 +34,18 @@ namespace MTA.App
             return rt;
         }
 
+        // Point-anchored panel with an ABSOLUTE size + position. Panel() above stretches to
+        // FILL its parent (anchorMin 0 / anchorMax 1), so doing Panel() then setting sizeDelta
+        // makes sizeDelta an edge-OFFSET — the rect inflates to ~parent-size and lands in the
+        // wrong place. Rows/cards/tiles/bars placed by explicit coords must use this instead.
+        public static RectTransform Box(Transform parent, string name, Color color, Vector2 size, Vector2 pos)
+        {
+            var rt = Panel(parent, name, color);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = size; rt.anchoredPosition = pos;
+            return rt;
+        }
+
         public static Text Label(Transform parent, string text, int size, Vector2 pos,
             Vector2 sizeDelta, Font font, TextAnchor anchor = TextAnchor.MiddleCenter)
         {

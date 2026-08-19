@@ -459,8 +459,7 @@ namespace MTA.App
         void CompletionBar(string label, int pct, ref float y, Color col)
         {
             UIFactory.Label(_progressContent, label + "   " + pct + "%", 28, new Vector2(-460, y + 4), new Vector2(720, 40), _font).alignment = TextAnchor.MiddleLeft;
-            var bar = UIFactory.Panel(_progressContent, "cbg", new Color(0, 0, 0, 0.5f));
-            bar.sizeDelta = new Vector2(940, 22); bar.anchoredPosition = new Vector2(0, y - 30);
+            var bar = UIFactory.Box(_progressContent, "cbg", new Color(0, 0, 0, 0.5f), new Vector2(940, 22), new Vector2(0, y - 30));
             var fill = UIFactory.Panel(bar, "cf", col);
             fill.anchorMin = new Vector2(0, 0); fill.anchorMax = new Vector2(Mathf.Clamp01(pct / 100f), 1); fill.offsetMin = fill.offsetMax = Vector2.zero;
             y -= 74;
@@ -923,8 +922,7 @@ namespace MTA.App
         void BuildOnboarding(Transform parent)
         {
             _onboarding = UIFactory.Panel(parent, "OnbPanel", new Color(0.06f, 0.08f, 0.13f));
-            var card = UIFactory.Panel(_onboarding, "OnbCard", new Color(0.12f, 0.14f, 0.2f, 0.98f));
-            card.sizeDelta = new Vector2(940, 1000); card.anchoredPosition = new Vector2(0, 40);
+            var card = UIFactory.Box(_onboarding, "OnbCard", new Color(0.12f, 0.14f, 0.2f, 0.98f), new Vector2(940, 1000), new Vector2(0, 40));
             _onbTitle = UIFactory.Label(card, "", 52, new Vector2(0, 380), new Vector2(880, 90), _font);
             _onbTitle.color = new Color(1f, 0.85f, 0.4f);
             _onbBody = UIFactory.Label(card, "", 34, new Vector2(0, 10), new Vector2(820, 620), _font);
@@ -978,8 +976,7 @@ namespace MTA.App
         void QuestRow(QuestDef def, float y)
         {
             int prog = Quests.Progress(_profile, def); bool done = Quests.IsComplete(_profile, def); bool claimed = Quests.IsClaimed(_profile, def);
-            var row = UIFactory.Panel(_questContent, "QRow", new Color(0.15f, 0.17f, 0.22f, 0.95f));
-            row.sizeDelta = new Vector2(1000, 118); row.anchoredPosition = new Vector2(0, y);
+            var row = UIFactory.Box(_questContent, "QRow", new Color(0.15f, 0.17f, 0.22f, 0.95f), new Vector2(1000, 118), new Vector2(0, y));
             UIFactory.Label(row, def.title, 30, new Vector2(-150, 24), new Vector2(680, 44), _font).alignment = TextAnchor.MiddleLeft;
             UIFactory.Label(row, prog + " / " + def.target + "     +" + def.coins + " coins", 24, new Vector2(-150, -26), new Vector2(680, 36), _font).alignment = TextAnchor.MiddleLeft;
             // progress bar
@@ -1028,8 +1025,7 @@ namespace MTA.App
             foreach (var def in Achievements.Defs)
             {
                 bool got = _profile.HasAchievement(def.id);
-                var row = UIFactory.Panel(_achContent, "ARow", got ? new Color(0.22f, 0.2f, 0.1f, 0.95f) : new Color(0.14f, 0.14f, 0.17f, 0.95f));
-                row.sizeDelta = new Vector2(1000, 128); row.anchoredPosition = new Vector2(0, y); y -= 144;
+                var row = UIFactory.Box(_achContent, "ARow", got ? new Color(0.22f, 0.2f, 0.1f, 0.95f) : new Color(0.14f, 0.14f, 0.17f, 0.95f), new Vector2(1000, 128), new Vector2(0, y)); y -= 144;
                 var medal = UIFactory.Label(row, got ? "★" : "?", 54, new Vector2(-420, 0), new Vector2(110, 110), _font);
                 medal.color = got ? new Color(1f, 0.82f, 0.3f) : new Color(0.4f, 0.4f, 0.45f);
                 var title = UIFactory.Label(row, def.title, 32, new Vector2(50, 24), new Vector2(760, 46), _font); title.alignment = TextAnchor.MiddleLeft;
@@ -1049,8 +1045,7 @@ namespace MTA.App
             _dexContent.anchorMin = _dexContent.anchorMax = new Vector2(0.5f, 0.5f);
             _dexContent.sizeDelta = new Vector2(1040, 1900); _dexContent.anchoredPosition = new Vector2(0, -30);
             // detail overlay (hidden until a discovered species is tapped)
-            _dexDetail = UIFactory.Panel(_dex, "DexDetail", new Color(0.1f, 0.12f, 0.16f, 0.99f));
-            _dexDetail.sizeDelta = new Vector2(960, 1500); _dexDetail.anchoredPosition = new Vector2(0, 20);
+            _dexDetail = UIFactory.Box(_dex, "DexDetail", new Color(0.1f, 0.12f, 0.16f, 0.99f), new Vector2(960, 1500), new Vector2(0, 20));
             _dexDetail.gameObject.SetActive(false);
             UIFactory.Button(_dex, "BACK", new Vector2(0, -900), new Vector2(400, 100), _font, () => _ctrl.BackToMenu());
         }
@@ -1066,8 +1061,7 @@ namespace MTA.App
             {
                 string id = _roster[i]; var sp = _reg.Get(id); bool seen = _profile.IsSeen(id);
                 int c = i % cols, r = i / cols;
-                var tile = UIFactory.Panel(_dexContent, "DexTile", new Color(0.15f, 0.16f, 0.2f, 0.95f));
-                tile.sizeDelta = new Vector2(tw, th); tile.anchoredPosition = new Vector2(x0 + c * (tw + gx), y0 - r * (th + gy));
+                var tile = UIFactory.Box(_dexContent, "DexTile", new Color(0.15f, 0.16f, 0.2f, 0.95f), new Vector2(tw, th), new Vector2(x0 + c * (tw + gx), y0 - r * (th + gy)));
                 UIFactory.Label(tile, "#" + (i + 1).ToString("D2"), 20, new Vector2(-tw / 2 + 34, th / 2 - 22), new Vector2(80, 30), _font).color = new Color(0.6f, 0.6f, 0.7f);
                 if (seen)
                 {
