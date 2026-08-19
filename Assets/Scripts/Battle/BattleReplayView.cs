@@ -355,6 +355,7 @@ namespace MTA.Battle
             AudioManager.Play(Sfx.Whoosh); AudioManager.Play(Sfx.Ultimate); AudioManager.PlayPitched(Sfx.Bass, 1f, 1f);
             if (_superRoot == null) { yield return new WaitForSecondsRealtime(0.4f); yield break; }
             Color ec = elementColors != null && elementColors.TryGetValue(actorSp, out var e) ? e : new Color(1f, 0.7f, 0.2f);
+            _arena?.Flash(ec, 0.4f);   // ultimate → arena flash
             var sprite = caster != null ? caster.CurrentSprite : null;
             int mir = caster != null ? caster.Mirror : 1;
             try
@@ -524,6 +525,7 @@ namespace MTA.Battle
         AttackStyle StyleOf(int team, int slot) =>
             _styleByKey.TryGetValue(Key(team, slot), out var s) ? s : AttackStyle.MeleeLunge;
         Vector2 PosOf(int team, int slot) => View(team, slot) is UnitView v ? v.BasePos : Formation(team, slot);
+        static Vector2 Ground(Vector2 p) => new Vector2(p.x, p.y - 110f);   // feet on the arena floor
 
         void Apply(ReplayEvent e, ChoreoBeat b, int idx)
         {
@@ -625,6 +627,7 @@ namespace MTA.Battle
                         dv.Knock(knock, b.knockback); dv.Launch(b.endsBattle ? 170f : 130f);   // launch + spin + fade (no run-in)
                         dv.PlayDeath(knock);
                         _vfx.Play("explosion", dv.BasePos, b.endsBattle ? 340f : 240f, Color.white);
+                        _arena?.React(b.endsBattle ? ArenaReact.KO : ArenaReact.Debris, Ground(dv.BasePos));   // full arena reaction on the finisher
                         CrowdFlinch(Key(e.targetTeam, e.targetSlot), -1, -1, dv.BasePos, 280f);   // scrum recoils from the KO
                     }
                     if (b.endsBattle)
@@ -700,6 +703,7 @@ namespace MTA.Battle
                     T.Squash(1.2f, 0.8f, 0.08f); T.Vibrate(2.5f, 0.05f);
                     _vfx.Play("hit_small", T.BasePos + ComboJit(i), 130f, Color.white);
                     _fx.Burst(T.BasePos + ComboJit(i), BurstKind.Slash);
+                    _arena?.React(ArenaReact.Dust, Ground(T.BasePos));
                     Shake(4f); AudioManager.Play(Sfx.Hit);
                     yield return new WaitForSecondsRealtime(0.05f / sp);
                 }
@@ -708,6 +712,7 @@ namespace MTA.Battle
                 AudioManager.Impact(false, true, _hudRng.Range(0.9f, 1.1f));
                 _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
                 _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
+                _arena?.React(ArenaReact.Crack, Ground(T.BasePos)); _arena?.React(ArenaReact.Debris, Ground(T.BasePos));
                 T.Spin(720f, 0.55f); T.Squash(1.25f, 0.78f, 0.09f); T.Vibrate(3f, 0.09f); HitStop(0.09f);
                 StartCoroutine(MoveOffset(T, T.combatOffset, new Vector2(dir.x * 24f, 300f), 0.16f / sp, true, gtint));
                 yield return MoveOffset(A, close, close + new Vector2(dir.x * 60f, 260f), 0.16f / sp, true, gtint);
@@ -732,6 +737,7 @@ namespace MTA.Battle
                 T.Spin(900f, 0.16f);
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
+                _arena?.React(ArenaReact.Shockwave, Ground(T.BasePos));
                 DamageNumber(T.BasePos, b.amount, true, ult);
                 if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
                 T.Knock(dir, b.knockback); T.Squash(1.35f, 0.68f, 0.1f); T.Vibrate(3f, ult ? 0.15f : 0.09f);
@@ -785,6 +791,7 @@ namespace MTA.Battle
                     {
                         DamageNumber(T.BasePos, b.amount, b.crit, false);
                         T.Knock(dir, b.knockback);
+                        _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
                         if (b.crit) { T.Vibrate(2.5f, 0.06f); Shake(8f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
                     }
                     yield return new WaitForSecondsRealtime(0.05f / sp);
@@ -809,6 +816,7 @@ namespace MTA.Battle
                 T.PlayHit(b.crit);
                 _vfx.Play(b.crit ? "hit_impact" : "hit_small", T.BasePos, 150f, Color.white);
                 T.Knock(dir, b.knockback * 0.6f); T.Squash(1.2f, 0.8f, 0.08f); if (b.crit) T.Vibrate(2.5f, 0.06f);
+                _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
                 DamageNumber(T.BasePos, b.amount, b.crit, false);
             }
             AudioManager.Play(b.crit ? Sfx.Crit : Sfx.Hit);
@@ -833,7 +841,7 @@ namespace MTA.Battle
                 if (last)
                 {
                     DamageNumber(tp, b.amount, b.crit, ult);
-                    if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); }
+                    if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); _arena?.React(big ? ArenaReact.Shockwave : b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(tp)); }
                     if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
                     else if (b.crit) { T?.Vibrate(2.5f, 0.09f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
                 }
@@ -1042,6 +1050,7 @@ namespace MTA.Battle
             _vfx.Play("hit_impact", new Vector2(80, -80), 200f, Color.white);
             StartCoroutine(Shockwave(new Vector2(0, -10), CCrit));
             Shake(16f); FlashScreen(0.5f); ZoomPunch(0.05f); AudioManager.Play(Sfx.Crit);
+            _arena?.React(ArenaReact.Shockwave, new Vector2(0, -110));   // the two charges collide
             Splash("FIGHT!", CCrit, 84f, 0.9f, 5f);   // synced to the opening-charge collision
             AudioManager.Announce(Sfx.VoFight);
         }
