@@ -49,6 +49,7 @@ namespace MTA.App
         Dictionary<string, string> _elemNames = new Dictionary<string, string>();
         Dictionary<string, string> _roleNames = new Dictionary<string, string>();
         Dictionary<string, string> _displayNames = new Dictionary<string, string>();
+        Dictionary<string, int> _rarities = new Dictionary<string, int>();
         readonly Dictionary<string, Button> _speciesButtons = new Dictionary<string, Button>();
         readonly List<Button> _speedButtons = new List<Button>();
 
@@ -76,6 +77,7 @@ namespace MTA.App
                 _elemNames[s.speciesId] = s.element;
                 _roleNames[s.speciesId] = MonsterMeta.Role(s).ToString();
                 _displayNames[s.speciesId] = !string.IsNullOrEmpty(s.displayName) ? s.displayName : Nice(s.speciesId);
+                _rarities[s.speciesId] = MonsterMeta.Rarity(s);
             }
 
             // Meta progression: load or create the player profile.
@@ -913,6 +915,7 @@ namespace MTA.App
             _view.elementColors = _elemColors;            // element indicators on fighters
             _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
             _view.displayNames = _displayNames;           // Title Case names over fighters
+            _view.rarities = _rarities;                   // VS-screen rarity stars
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

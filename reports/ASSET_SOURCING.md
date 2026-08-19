@@ -100,3 +100,20 @@ SFX (attack/crit/ultimate/death/heal).
 - FX (attack/hit/explosion/elemental), UI icons, rarity icons, and arena backgrounds
   remain **procedural** (generated), not yet replaced — monsters + audio were the
   priority; those are the next sourcing pass.
+
+## Phase Q — announcer + impact audio (NOT downloaded; synth fallback)
+
+The Phase Q spec calls for two kenney.nl CC0 packs:
+- **Impact Sounds** — https://kenney.nl/assets/impact-sounds
+- **Voiceover Pack: Fighter** (announcer: "Fight!", "K.O.!", etc.) — https://kenney.nl/assets/voiceover-pack-fighter
+
+Both are CC0. They were **not downloaded** (terminal network/adb is flaky on this
+machine). The game ships a **procedural synth fallback** for the announcer callouts
+(`Sfx.VoFight/VoCounter/VoKO/VoVictory`) and layered impact (`Sfx.Bass` + `AudioManager.Impact`).
+
+To use the real packs later, drop the clips into `Assets/Resources/Audio/` with these names
+(the AudioManager `OverrideSfx` hooks pick them up automatically, no code change):
+- `vo_fight`, `vo_counter`, `vo_ko`, `vo_victory` (from Voiceover Pack: Fighter)
+- `impact_bass` (a low impact from Impact Sounds)
+
+Verify the CC0 license file inside each download before use.

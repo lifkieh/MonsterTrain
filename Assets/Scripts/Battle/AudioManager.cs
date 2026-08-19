@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace MTA.Battle
 {
-    public enum Sfx { Click, Hover, Hit, Crit, Skill, Ultimate, Heal, Death, Victory, Defeat, LevelUp, Evolution, Reward }
+    public enum Sfx { Click, Hover, Hit, Crit, Skill, Ultimate, Heal, Death, Victory, Defeat, LevelUp, Evolution, Reward, VoFight, VoCounter, VoKO, VoVictory, Bass, Whoosh }
     public enum Music { None, Menu, Battle, Boss, Victory, Defeat }
     public enum AudioBus { Sfx, Ui }
 
@@ -32,6 +32,13 @@ namespace MTA.Battle
                 case Sfx.LevelUp: return Make("levelup", 0.4f, t => Sin(t < 0.13f ? 523 : t < 0.26f ? 659 : 784, t) * Env(t % 0.13f, 10) * 0.6f);
                 case Sfx.Evolution: return Make("evolve", 0.7f, t => Mathf.Sin(2 * Mathf.PI * (300 + 500 * t) * t) * Env(t, 3) * 0.6f + Sin(t < 0.5f ? 523 : 1046, t) * Env(t, 2) * 0.3f);
                 case Sfx.Reward: return Make("reward", 0.3f, t => Sin(t < 0.1f ? 784 : 1046, t) * Env(t % 0.1f, 14) * 0.55f);
+                // Announcer stingers (synth fallback — overridden by a CC0 voice pack if dropped in).
+                case Sfx.VoFight: return Make("vo_fight", 0.42f, t => (Sin(300 + 220 * Mathf.Clamp01(t / 0.42f), t) + 0.5f * Sin(600, t)) * Env(t % 0.42f, 3) * 0.5f);
+                case Sfx.VoCounter: return Make("vo_counter", 0.34f, t => (Sin(460, t) + 0.4f * Sin(920, t)) * Env(t, 5) * 0.5f);
+                case Sfx.VoKO: return Make("vo_ko", 0.5f, t => (Sin(320 - 150 * t, t) + 0.5f * Sin(150, t)) * Env(t, 4) * 0.6f + N() * 0.2f * Env(t, 8));
+                case Sfx.VoVictory: return Make("vo_victory", 0.72f, t => Sin(t < 0.22f ? 523 : t < 0.44f ? 659 : 784, t) * Env(t % 0.22f, 6) * 0.5f);
+                case Sfx.Bass: return Make("bass", 0.3f, t => (Sin(60, t) + 0.5f * Sin(92, t)) * Env(t, 11));
+                case Sfx.Whoosh: return Make("whoosh", 0.22f, t => N() * Mathf.Sin(Mathf.PI * Mathf.Clamp01(t / 0.22f)) * 0.5f);
                 default: return Make("victory", 0.5f, t => Sin(t < 0.25f ? 660 : 880, t) * Env(t, 3) * 0.6f);
             }
         }
@@ -138,6 +145,12 @@ namespace MTA.Battle
             OverrideSfx(Sfx.Ultimate, "Audio/sfx_roar_01");
             OverrideSfx(Sfx.Death, "Audio/sfx_burble_01");
             OverrideSfx(Sfx.Heal, "Audio/sfx_cute_03");
+            // Optional CC0 announcer + impact packs (drop into Resources/Audio to override synth).
+            OverrideSfx(Sfx.VoFight, "Audio/vo_fight");
+            OverrideSfx(Sfx.VoCounter, "Audio/vo_counter");
+            OverrideSfx(Sfx.VoKO, "Audio/vo_ko");
+            OverrideSfx(Sfx.VoVictory, "Audio/vo_victory");
+            OverrideSfx(Sfx.Bass, "Audio/impact_bass");
             _pool = new AudioSource[8];
             for (int i = 0; i < _pool.Length; i++) { _pool[i] = gameObject.AddComponent<AudioSource>(); _pool[i].playOnAwake = false; }
             _musicA = gameObject.AddComponent<AudioSource>(); _musicB = gameObject.AddComponent<AudioSource>();
@@ -168,7 +181,32 @@ namespace MTA.Battle
             if (!_clips.TryGetValue(id, out var clip) || clip == null || _pool == null) return;
             float vol = SfxLibrary.Bus(id) == AudioBus.Ui ? UiVolume : SfxVolume;
             var src = _pool[_next]; _next = (_next + 1) % _pool.Length;
+            src.pitch = 1f;
             src.PlayOneShot(clip, Mathf.Clamp01(vol));
+        }
+
+        // Play with a pitch (for seeded ±10% variation / bass layering).
+        public static void PlayPitched(Sfx id, float pitch, float volScale) { if (!Muted && Instance != null) Instance.PlayPitchedInternal(id, pitch, volScale); }
+        void PlayPitchedInternal(Sfx id, float pitch, float volScale)
+        {
+            if (!_clips.TryGetValue(id, out var clip) || clip == null || _pool == null) return;
+            float vol = (SfxLibrary.Bus(id) == AudioBus.Ui ? UiVolume : SfxVolume) * Mathf.Clamp(volScale, 0f, 1.5f);
+            var src = _pool[_next]; _next = (_next + 1) % _pool.Length;
+            src.pitch = Mathf.Clamp(pitch, 0.5f, 2f);
+            src.PlayOneShot(clip, Mathf.Clamp01(vol));
+        }
+
+        // Announcer callout (synth stinger, or a CC0 voice clip if present).
+        public static void Announce(Sfx voice) => Play(voice);
+
+        // Layered impact for crit/ult/KO only: hit + bass thump (+ crit/ult), pitch-varied.
+        public static void Impact(bool ult, bool crit, float pitch)
+        {
+            if (Muted || Instance == null) return;
+            Instance.PlayPitchedInternal(Sfx.Hit, pitch, 0.9f);
+            Instance.PlayPitchedInternal(Sfx.Bass, pitch * 0.98f, ult ? 1f : 0.7f);
+            if (ult) Instance.PlayPitchedInternal(Sfx.Ultimate, pitch, 1f);
+            else if (crit) Instance.PlayPitchedInternal(Sfx.Crit, pitch, 0.9f);
         }
 
         // ---- Music ----

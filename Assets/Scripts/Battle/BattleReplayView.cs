@@ -60,6 +60,12 @@ namespace MTA.Battle
         Text _comboLabel; int _combo; double _comboLastT = -999; float _comboScale = 1f, _comboAlpha;
         Text _splash; float _splashT, _splashDur, _splashShake; Color _splashColor;
         RectTransform _letterTop, _letterBot; float _letterCur, _letterTarget;
+
+        // --- Phase Q ceremony ---
+        public Dictionary<string, int> rarities;   // species -> rarity (set before Play)
+        RectTransform _vs, _vsLeft, _vsRight; Text _vsMid; Image _vsFlash; CanvasGroup _vsGroup; float _vsT; const float VS_DUR = 2.6f; bool _vsFlashed;
+        RectTransform _superRoot; Image _superDim, _superSil, _superTint, _superCutin; Text _superBanner;
+        Image _finDark; float _finDarkCur, _finDarkTarget;
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
@@ -110,7 +116,8 @@ namespace MTA.Battle
             _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
             _stageTime = 0f; _chargeClashed = false; _fillerQ = 0; _lastClashT = -1;
             _combo = 0; _comboLastT = -999; _comboAlpha = 0f; _comboScale = 1f; _splashT = 0f; _letterCur = _letterTarget = 0f;
-            _hudRng.s = result.logHash == 0UL ? 0x9E3779B97F4A7C15UL : result.logHash;   // seeded number scatter
+            _finDarkCur = _finDarkTarget = 0f; _vsFlashed = false;
+            _hudRng.s = result.logHash == 0UL ? 0x9E3779B97F4A7C15UL : result.logHash;   // seeded number scatter / pitch
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
             _plan = EngagementPlanner.Plan(result, replay);               // tawuran engagement plan (seeded by logHash)
@@ -127,6 +134,7 @@ namespace MTA.Battle
             _simPerReal = sim / target;
 
             BuildStage();
+            _vsT = VS_DUR;   // hold on the VS screen before the fight begins
         }
 
         void BuildStage()
@@ -202,7 +210,7 @@ namespace MTA.Battle
             }
             BuildHud();
             BuildFightHud();
-            Splash("ROUND 1", Color.white, 60f, 0.7f, 0f);   // FIGHT! follows on the opening-charge collision
+            BuildCeremony();
             // Units start in formation (set by Build); the opening charge in
             // UpdateEngagement sprints both teams to the centre and they collide.
         }
@@ -238,6 +246,173 @@ namespace MTA.Battle
             t.alignment = TextAnchor.MiddleCenter; t.color = Color.white; t.raycastTarget = false;
             t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
             return t;
+        }
+
+        // ---- Phase Q ceremony: VS screen, super flash, finisher darken ----
+        void BuildCeremony()
+        {
+            _finDark = FullImage(_root, new Color(0, 0, 0, 0));   // finisher darken (over arena, under HUD)
+            BuildSuper();
+            BuildVS();
+        }
+
+        Image FullImage(RectTransform parent, Color c)
+        {
+            var go = new GameObject("Full", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(parent, false);
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.sizeDelta = new Vector2(1500, 2100); rt.anchoredPosition = Vector2.zero;
+            var img = go.GetComponent<Image>(); img.color = c; img.raycastTarget = false; return img;
+        }
+
+        void BuildSuper()
+        {
+            var go = new GameObject("SuperRoot", typeof(RectTransform)); _superRoot = go.GetComponent<RectTransform>();
+            _superRoot.SetParent(_root, false); _superRoot.anchorMin = Vector2.zero; _superRoot.anchorMax = Vector2.one; _superRoot.offsetMin = _superRoot.offsetMax = Vector2.zero;
+            _superDim = FullImage(_superRoot, new Color(0, 0, 0, 0));
+            _superTint = FullImage(_superRoot, new Color(1, 1, 1, 0));
+            var sil = new GameObject("SuperSil", typeof(RectTransform), typeof(Image)); _superSil = sil.GetComponent<Image>();
+            var srt = sil.GetComponent<RectTransform>(); srt.SetParent(_superRoot, false); srt.anchorMin = srt.anchorMax = new Vector2(0.5f, 0.5f); srt.sizeDelta = new Vector2(560, 560); srt.anchoredPosition = new Vector2(0, 40);
+            _superSil.raycastTarget = false; _superSil.preserveAspect = true; _superSil.color = new Color(1, 1, 1, 0);
+            var cut = new GameObject("SuperCut", typeof(RectTransform), typeof(Image)); _superCutin = cut.GetComponent<Image>();
+            var crt = cut.GetComponent<RectTransform>(); crt.SetParent(_superRoot, false); crt.anchorMin = crt.anchorMax = new Vector2(0.5f, 0.5f); crt.sizeDelta = new Vector2(380, 380); crt.anchoredPosition = new Vector2(-320, -260);
+            _superCutin.raycastTarget = false; _superCutin.preserveAspect = true; _superCutin.color = new Color(1, 1, 1, 0);
+            _superBanner = HudText(_superRoot, "", 70, new Vector2(0, -160), new Vector2(1400, 120), FontStyle.BoldAndItalic);
+            _superBanner.color = new Color(1, 1, 1, 0);
+            _superRoot.gameObject.SetActive(false);
+        }
+
+        void BuildVS()
+        {
+            var go = new GameObject("VS", typeof(RectTransform)); _vs = go.GetComponent<RectTransform>();
+            _vs.SetParent(_root, false); _vs.anchorMin = Vector2.zero; _vs.anchorMax = Vector2.one; _vs.offsetMin = _vs.offsetMax = Vector2.zero; _vs.SetAsLastSibling();
+            _vsGroup = go.AddComponent<CanvasGroup>();
+            FullImage(_vs, new Color(0.03f, 0.03f, 0.06f, 0.96f));
+            _vsLeft = BuildVsCard(0);
+            _vsRight = BuildVsCard(1);
+            _vsMid = HudText(_vs, "VS", 130, new Vector2(0, 20), new Vector2(500, 220), FontStyle.BoldAndItalic);
+            _vsFlash = FullImage(_vs, new Color(1, 1, 1, 0));
+        }
+
+        RectTransform BuildVsCard(int team)
+        {
+            string sp = null; foreach (var u in _pb.Units) if (u.team == team) { sp = u.speciesId; break; }
+            float side = team == 0 ? -1f : 1f;
+            var card = new GameObject("VsCard", typeof(RectTransform)); var rt = card.GetComponent<RectTransform>();
+            rt.SetParent(_vs, false); rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = new Vector2(440, 640); rt.anchoredPosition = new Vector2(side * 270f, 40f);
+            var sprite = sp != null ? MonsterVisual.For(sp, false) : null;
+            if (sprite != null)
+            {
+                var pg = new GameObject("P", typeof(RectTransform), typeof(Image)); var prt = pg.GetComponent<RectTransform>();
+                prt.SetParent(rt, false); prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f); prt.sizeDelta = new Vector2(360, 360); prt.anchoredPosition = new Vector2(0, 90);
+                var pi = pg.GetComponent<Image>(); pi.sprite = sprite; pi.preserveAspect = true; pi.raycastTarget = false; pi.rectTransform.localScale = new Vector3(team == 0 ? -1f : 1f, 1f, 1f);
+            }
+            string dn = displayNames != null && sp != null && displayNames.TryGetValue(sp, out var d) ? d : Humanize(sp);
+            HudText(rt, dn, 40, new Vector2(0, -130), new Vector2(440, 60), FontStyle.Bold);
+            string el = elementNames != null && sp != null && elementNames.TryGetValue(sp, out var elm) ? elm : "";
+            Color ec = elementColors != null && sp != null && elementColors.TryGetValue(sp, out var c) ? c : Color.gray;
+            var dot = new GameObject("Elem", typeof(RectTransform), typeof(Image)); var drt = dot.GetComponent<RectTransform>();
+            drt.SetParent(rt, false); drt.anchorMin = drt.anchorMax = new Vector2(0.5f, 0.5f); drt.sizeDelta = new Vector2(26, 26); drt.anchoredPosition = new Vector2(-120, -186);
+            var di = dot.GetComponent<Image>(); di.sprite = ProceduralArt.Disc(); di.color = ec; di.raycastTarget = false;
+            HudText(rt, el, 26, new Vector2(-10, -186), new Vector2(200, 40), FontStyle.Bold);
+            int rar = rarities != null && sp != null && rarities.TryGetValue(sp, out var rr) ? rr : 3;
+            for (int i = 0; i < 5; i++)
+            {
+                var s = new GameObject("St", typeof(RectTransform), typeof(Image)); var strt = s.GetComponent<RectTransform>();
+                strt.SetParent(rt, false); strt.anchorMin = strt.anchorMax = new Vector2(0.5f, 0.5f); strt.sizeDelta = new Vector2(30, 30); strt.anchoredPosition = new Vector2(-60 + i * 32f, -240);
+                var si = s.GetComponent<Image>(); si.sprite = ProceduralArt.Star(); si.raycastTarget = false; si.color = i < rar ? new Color(1f, 0.82f, 0.28f) : new Color(0.3f, 0.3f, 0.36f, 0.8f);
+            }
+            return rt;
+        }
+
+        void TickVS()
+        {
+            _vsT -= Time.deltaTime;
+            if ((Input.GetMouseButtonDown(0) || Input.touchCount > 0) && _vsT > 0.3f) _vsT = 0.3f;   // tap to skip
+            float p = 1f - Mathf.Clamp01(_vsT / VS_DUR);
+            float ease = 1f - (1f - Mathf.Clamp01(p / 0.28f)) * (1f - Mathf.Clamp01(p / 0.28f));   // slam-in
+            if (_vsLeft != null) _vsLeft.anchoredPosition = new Vector2(Mathf.Lerp(-780f, -270f, ease), 40f);
+            if (_vsRight != null) _vsRight.anchoredPosition = new Vector2(Mathf.Lerp(780f, 270f, ease), 40f);
+            if (_vsMid != null) _vsMid.rectTransform.localScale = Vector3.one * Mathf.Lerp(2.2f, 1f, Mathf.Clamp01((p - 0.3f) / 0.15f));
+            if (!_vsFlashed && p >= 0.3f) { _vsFlashed = true; Shake(14f); if (_vsFlash != null) _vsFlash.color = new Color(1, 1, 1, 0.8f); AudioManager.Play(Sfx.Crit); }
+            if (_vsFlash != null && _vsFlash.color.a > 0f) { var fc = _vsFlash.color; fc.a = Mathf.Max(0f, fc.a - Time.deltaTime * 3.5f); _vsFlash.color = fc; }
+            if (_vsGroup != null) _vsGroup.alpha = _vsT < 0.3f ? Mathf.Clamp01(_vsT / 0.3f) : 1f;
+            if (_vsT <= 0f) EndVS();
+        }
+
+        void EndVS()
+        {
+            if (_vs != null) _vs.gameObject.SetActive(false);
+            Splash("ROUND 1", Color.white, 60f, 0.7f, 0f);   // FIGHT! follows on the opening-charge collision
+        }
+
+        void CeremonyFreeze(float d) { _hitstop = Mathf.Max(_hitstop, d); }   // ceremony clock hold (not budgeted)
+
+        // KOF/GG-style ultimate ceremony: freeze, dim, element tint, lit caster silhouette,
+        // name banner slide, diagonal cut-in — then the ult executes. ≤ ~1.1 s.
+        IEnumerator SuperFlash(UnitView caster, string actorSp)
+        {
+            CeremonyFreeze(1.05f);
+            AudioManager.Play(Sfx.Whoosh); AudioManager.Play(Sfx.Ultimate); AudioManager.PlayPitched(Sfx.Bass, 1f, 1f);
+            if (_superRoot == null) { yield return new WaitForSecondsRealtime(0.4f); yield break; }
+            Color ec = elementColors != null && elementColors.TryGetValue(actorSp, out var e) ? e : new Color(1f, 0.7f, 0.2f);
+            var sprite = caster != null ? caster.CurrentSprite : null;
+            int mir = caster != null ? caster.Mirror : 1;
+            try
+            {
+                _superRoot.gameObject.SetActive(true); _superRoot.SetAsLastSibling();
+                if (sprite != null) { _superSil.sprite = sprite; _superCutin.sprite = sprite; }
+                _superBanner.text = SpeciesIdentity.SkillWord(actorSp).ToUpper();
+                _zoomTarget = 1.2f;
+                float total = 1.0f, t = 0f;
+                while (t < total)
+                {
+                    t += Time.deltaTime; float p = t / total;
+                    float fade = Mathf.Clamp01(p / 0.15f) * (p > 0.78f ? Mathf.Clamp01((1f - p) / 0.22f) : 1f);
+                    _superDim.color = new Color(0, 0, 0, 0.7f * fade);
+                    _superTint.color = new Color(ec.r, ec.g, ec.b, 0.35f * fade);
+                    _superSil.color = new Color(1f, 1f, 1f, 0.9f * fade);
+                    _superSil.rectTransform.localScale = new Vector3(mir, 1f, 1f) * Mathf.Lerp(1.3f, 1f, Mathf.Clamp01(p / 0.3f));
+                    _superBanner.rectTransform.anchoredPosition = new Vector2(Mathf.Lerp(-1500f, 1500f, p), -160f);
+                    _superBanner.color = new Color(1f, 0.95f, 0.7f, fade);
+                    float cp = Mathf.Clamp01(p / 0.25f);
+                    _superCutin.rectTransform.localScale = new Vector3(mir, 1f, 1f);
+                    _superCutin.rectTransform.anchoredPosition = new Vector2(Mathf.Lerp(-720f, -320f, cp), Mathf.Lerp(-640f, -260f, cp));
+                    _superCutin.color = new Color(1f, 1f, 1f, fade);
+                    yield return null;
+                }
+            }
+            finally
+            {
+                var clear = new Color(1, 1, 1, 0);
+                _superDim.color = _superTint.color = _superSil.color = _superCutin.color = clear; _superBanner.color = clear;
+                _superRoot.gameObject.SetActive(false);
+            }
+        }
+
+        // Ultimate dispatch: ceremony, then the real ult choreography (melee spotlight or ranged).
+        IEnumerator SuperUlt(int at, int as_, int tt, int ts, ChoreoBeat b, AttackStyle st, string actorSp, bool ranged)
+        {
+            var A = View(at, as_);
+            yield return SuperFlash(A, actorSp);
+            if (ranged)
+            {
+                Vector2 from = PosOf(at, as_), to = PosOf(tt, ts);
+                A?.PlayAttack(new Vector2(at == 0 ? 1f : -1f, 0f), 26f, false);
+                _fx.Projectile(from, to, ProjColor(st), () => { });
+                yield return new WaitForSecondsRealtime(0.12f);
+                yield return RangedHit(at, as_, tt, ts, b, actorSp, true);
+                _spotlightBusy = false; _spotlightTargetKey = -1;
+            }
+            else
+            {
+                yield return SpotlightCombo(at, as_, tt, ts, b, st, actorSp, true);   // clears _spotlightBusy in finally
+            }
+        }
+
+        IEnumerator VictoryHold()
+        {
+            yield return new WaitForSecondsRealtime(1.8f);
+            OnFinished?.Invoke(_pb.WinnerTeam);
         }
 
         // Fighting-game round pips: player team left, enemy right, screen-fixed.
@@ -292,6 +467,7 @@ namespace MTA.Battle
         {
             if (_playing)
             {
+                if (_vsT > 0f) { TickVS(); UpdateCamera(); return; }   // hold on the VS screen
                 _stageTime += Time.deltaTime;
                 if (_slowmoT > 0f) { _slowmoT -= Time.deltaTime; if (_slowmoT <= 0f) _slowmo = 1f; }
 
@@ -328,12 +504,17 @@ namespace MTA.Battle
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
                 {
-                    _finishedFired = true; _playing = false; _zoomTarget = 1.12f; _letterTarget = 0f;   // bars slide out on victory
+                    _finishedFired = true; _playing = false; _zoomTarget = 1.12f; _letterTarget = 0f; _finDarkTarget = 0f;
+                    int wIdx = 0; float sidew = _pb.WinnerTeam == 0 ? -1f : 1f;
                     foreach (var wu in _pb.Units)
                         if (wu.team == _pb.WinnerTeam && wu.Alive && _views.TryGetValue(Key(wu.team, wu.slot), out var wv))
+                        {
                             wv.PlayVictory();
-                    AudioManager.Play(Sfx.Victory);
-                    OnFinished?.Invoke(_pb.WinnerTeam);
+                            wv.EnterFrom(wv.BasePos, new Vector2(sidew * 150f + wIdx * 14f, -20f + wIdx * 52f));   // step forward, staggered
+                            wIdx++;
+                        }
+                    AudioManager.Play(Sfx.Victory); AudioManager.Announce(Sfx.VoVictory);
+                    StartCoroutine(VictoryHold());   // hold the celebration, then show the result screen
                 }
             }
             UpdateCamera();
@@ -397,6 +578,11 @@ namespace MTA.Battle
                         if (_clock - _lastClashT > 0.18) { _lastClashT = _clock; ClashFlourish(e.actorTeam, e.actorSlot, tt, ts, dir); }
                         CompactLunge(e.actorTeam, e.actorSlot, tt, ts, b);   // real damage number + knock inside the clash
                     }
+                    else if (ult && !_spotlightBusy)
+                    {
+                        _spotlightBusy = true; _spotlightTargetKey = Key(tt, ts);   // super ceremony, then the ult executes
+                        StartCoroutine(SuperUlt(e.actorTeam, e.actorSlot, tt, ts, b, st, actorSp, ranged));
+                    }
                     else if (ranged)
                     {
                         Vector2 from = PosOf(e.actorTeam, e.actorSlot), to = PosOf(tt, ts);
@@ -451,6 +637,8 @@ namespace MTA.Battle
                     else ApplyCam(ChoreoCam.ShakeCrit);
                     HitStop(b.endsBattle ? 0.15f : 0.10f);   // KO freeze (tiered; heavy only)
                     AudioManager.Play(Sfx.Death);
+                    AudioManager.Impact(b.endsBattle, true, _hudRng.Range(0.9f, 1.1f));
+                    if (b.endsBattle) AudioManager.Announce(Sfx.VoKO);
                     break;
                 }
                 case ReplayEventKind.Victory:
@@ -484,7 +672,7 @@ namespace MTA.Battle
                     AudioManager.Play(Sfx.Hover);
                     yield return new WaitForSecondsRealtime(0.13f / sp);
                     T.PlayAttack(new Vector2(-dir.x, 0f), 70f, false);
-                    Splash("COUNTER!", new Color(1f, 0.9f, 0.4f), 64f, 0.8f, 5f);
+                    Splash("COUNTER!", new Color(1f, 0.9f, 0.4f), 64f, 0.8f, 5f); AudioManager.Announce(Sfx.VoCounter);
                     _vfx.Play("hit_small", A.BasePos, 120f, Color.white);
                     A.PlayHit(false); A.Knock(dir, 40f); Shake(6f); AudioManager.Play(Sfx.Hit);
                     yield return new WaitForSecondsRealtime(0.12f / sp);
@@ -498,7 +686,7 @@ namespace MTA.Battle
                 // 1) ANTICIPATION + DASH IN (squash-crouch, dash with afterimages, land overshoot)
                 A.Squash(1.10f, 0.85f, 0.07f);
                 yield return new WaitForSecondsRealtime(0.05f / sp);
-                _vfx.Play("speedlines", A.BasePos + dir * 40f, 210f, new Color(1f, 1f, 1f, 0.9f));
+                _vfx.Play("speedlines", A.BasePos + dir * 40f, 210f, new Color(1f, 1f, 1f, 0.9f)); AudioManager.Play(Sfx.Whoosh);
                 yield return MoveOffset(A, Vector2.zero, close, 0.10f / sp, true, gtint);
                 A.Squash(0.9f, 1.12f, 0.06f);
                 Shake(4f);
@@ -517,7 +705,7 @@ namespace MTA.Battle
                 }
 
                 // 3) LAUNCHER — target spins up, attacker jumps after (heavy → capped freeze)
-                AudioManager.Play(Sfx.Crit);
+                AudioManager.Impact(false, true, _hudRng.Range(0.9f, 1.1f));
                 _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
                 _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
                 T.Spin(720f, 0.55f); T.Squash(1.25f, 0.78f, 0.09f); T.Vibrate(3f, 0.09f); HitStop(0.09f);
@@ -539,7 +727,7 @@ namespace MTA.Battle
                 }
 
                 // 5) SLAM DOWN (spike — spin down, tiered freeze, impact frame on ultimate)
-                AudioManager.Play(ult ? Sfx.Ultimate : Sfx.Crit);
+                AudioManager.Impact(ult, true, _hudRng.Range(0.9f, 1.1f));
                 _texts.Spawn(T.BasePos + new Vector2(0, 34), "SLAM!", COrange, 32);
                 T.Spin(900f, 0.16f);
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
@@ -646,7 +834,7 @@ namespace MTA.Battle
                 {
                     DamageNumber(tp, b.amount, b.crit, ult);
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); }
-                    if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); HitStop(0.15f); }
+                    if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
                     else if (b.crit) { T?.Vibrate(2.5f, 0.09f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
                 }
                 yield return new WaitForSecondsRealtime(0.05f / sp);
@@ -855,6 +1043,7 @@ namespace MTA.Battle
             StartCoroutine(Shockwave(new Vector2(0, -10), CCrit));
             Shake(16f); FlashScreen(0.5f); ZoomPunch(0.05f); AudioManager.Play(Sfx.Crit);
             Splash("FIGHT!", CCrit, 84f, 0.9f, 5f);   // synced to the opening-charge collision
+            AudioManager.Announce(Sfx.VoFight);
         }
 
         // Non-damaging filler beat (whiff / block / shove). NEVER spawns a damage number,
@@ -941,7 +1130,7 @@ namespace MTA.Battle
                 case ChoreoCam.ZoomCombo: _zoomTarget = 1.06f; break;
                 case ChoreoCam.ShakeCrit: _zoomTarget = 1.08f; Shake(12f); ZoomPunch(0.05f); FlashScreen(0.5f); break;
                 case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); FlashScreen(0.8f); break;
-                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); _letterTarget = 1f; break;
+                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); _letterTarget = 1f; _finDarkTarget = 1f; break;
                 case ChoreoCam.ZoomWinner: _zoomTarget = 1.12f; break;
             }
         }
@@ -1065,6 +1254,8 @@ namespace MTA.Battle
             _letterCur = Mathf.MoveTowards(_letterCur, _letterTarget, dt / 0.25f);
             if (_letterTop != null) _letterTop.anchoredPosition = new Vector2(0, (1f - _letterCur) * 140f);
             if (_letterBot != null) _letterBot.anchoredPosition = new Vector2(0, -(1f - _letterCur) * 140f);
+            _finDarkCur = Mathf.MoveTowards(_finDarkCur, _finDarkTarget, dt / 0.3f);
+            if (_finDark != null) _finDark.color = new Color(0, 0, 0, _finDarkCur * 0.5f);
         }
 
         void UpdateCamera()
