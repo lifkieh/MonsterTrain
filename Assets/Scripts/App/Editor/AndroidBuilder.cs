@@ -14,6 +14,7 @@ namespace MTA.App.EditorTools
     {
         const string ScenePath = "Assets/Scenes/FirstPlayable.unity";
         const string ApkPath = "Build/Android/TrainYourMonster.apk";
+        const string AabPath = "Build/Android/TrainYourMonster.aab";
 
         [MenuItem("MTA/Configure Android Settings")]
         public static void Configure()
@@ -37,6 +38,9 @@ namespace MTA.App.EditorTools
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
 
+            // Install to internal storage (Play-recommended; avoids SD unmount issues).
+            PlayerSettings.Android.preferredInstallLocation = AndroidPreferredInstallLocation.Auto;
+
             // Development APK: no custom keystore -> Unity signs with the Android
             // debug keystore automatically. Fine for sideloading, not for Play Store.
             PlayerSettings.Android.useCustomKeystore = false;
@@ -51,7 +55,7 @@ namespace MTA.App.EditorTools
             Debug.Log("MTA: Android settings configured (portrait, IL2CPP/ARM64, minSdk 24, v" + ReleaseVersion + ").");
         }
 
-        public const string ReleaseVersion = "0.1.0";
+        public const string ReleaseVersion = "1.0.0";
         public const int ReleaseVersionCode = 1;
 
         // App icon + splash background. Wrapped so a branding hiccup never fails the
@@ -140,6 +144,61 @@ namespace MTA.App.EditorTools
                       ", size=" + report.summary.totalSize + " bytes, apk=" + ApkPath);
             if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
                 EditorApplication.Exit(1);
+        }
+
+        // Release AAB pipeline (Google Play requires an .aab). No Development flag, app-bundle
+        // output, internal install, and release signing from env vars if provided. Invoke:
+        //   -executeMethod MTA.App.EditorTools.AndroidBuilder.BuildAab
+        [MenuItem("MTA/Build Android AAB (Release)")]
+        public static void BuildAab()
+        {
+            if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
+            {
+                Debug.LogError("MTA: BLOCKER — Android Build Support module is not installed.");
+                EditorApplication.Exit(2);
+                return;
+            }
+            ConfigureRelease();
+            if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
+                EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
+            EditorUserBuildSettings.buildAppBundle = true;   // → .aab
+
+            Directory.CreateDirectory("Build/Android");
+            var opts = new BuildPlayerOptions
+            {
+                scenes = new[] { ScenePath },
+                locationPathName = AabPath,
+                target = BuildTarget.Android,
+                targetGroup = BuildTargetGroup.Android,
+                options = BuildOptions.None      // RELEASE — no Development/debuggable flag
+            };
+            var report = BuildPipeline.BuildPlayer(opts);
+            Debug.Log("MTA: Android AAB = " + report.summary.result +
+                      ", size=" + report.summary.totalSize + " bytes, aab=" + AabPath);
+            if (report.summary.result != UnityEditor.Build.Reporting.BuildResult.Succeeded)
+                EditorApplication.Exit(1);
+        }
+
+        // Release configuration = Configure() + release signing. Falls back to the debug
+        // keystore with a loud warning if no release keystore env vars are provided.
+        static void ConfigureRelease()
+        {
+            Configure();
+            string ks = System.Environment.GetEnvironmentVariable("MTA_KEYSTORE_PATH");
+            if (string.IsNullOrEmpty(ks) || !File.Exists(ks))
+            {
+                PlayerSettings.Android.useCustomKeystore = false;
+                Debug.LogWarning("MTA: NO RELEASE KEYSTORE — set MTA_KEYSTORE_PATH / MTA_KEYSTORE_PASS / " +
+                    "MTA_KEY_ALIAS / MTA_KEY_PASS. The AAB will be DEBUG-signed and CANNOT be uploaded to " +
+                    "Google Play. Create one with keytool (see reports/PHASE_Z_STORE_READY.md) and keep it OUTSIDE the repo.");
+                return;
+            }
+            PlayerSettings.Android.useCustomKeystore = true;
+            PlayerSettings.Android.keystoreName = ks;
+            PlayerSettings.Android.keystorePass = System.Environment.GetEnvironmentVariable("MTA_KEYSTORE_PASS");
+            PlayerSettings.Android.keyaliasName = System.Environment.GetEnvironmentVariable("MTA_KEY_ALIAS");
+            PlayerSettings.Android.keyaliasPass = System.Environment.GetEnvironmentVariable("MTA_KEY_PASS");
+            Debug.Log("MTA: release keystore applied from environment.");
         }
     }
 }
