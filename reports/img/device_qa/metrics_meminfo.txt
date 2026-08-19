@@ -1,0 +1,59 @@
+﻿Applications Memory Usage (in Kilobytes):
+Uptime: 292888849 Realtime: 523342355
+
+** MEMINFO in pid 1369 [com.trainyourmonster.game] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    19348    19320       12     7649    20516    35800    25763     4977
+  Dalvik Heap     1816     1788        8      256     2836    27661     3085    24576
+ Dalvik Other     5908     1488        0      628    10604                           
+        Stack     1340     1340        0      356     1344                           
+       Ashmem       45        0        0        0      600                           
+    Other dev        9        0        8        0     1008                           
+     .so mmap    38012     3356    32684      676    68240                           
+    .jar mmap     6059        0     2472        0    48532                           
+    .apk mmap      256        0       72        0     1948                           
+    .ttf mmap      148        0        0        0      348                           
+    .dex mmap      497      488        0     8500     1212                           
+    .oat mmap       49        0        0        0     1324                           
+    .art mmap     2472     1968       88     6273    13720                           
+   Other mmap     5190        4     5156        0     6060                           
+   EGL mtrack    30241    30241        0        0    30241                           
+    GL mtrack    91616    91616        0        0    91616                           
+      Unknown   100387   100244      132    20926   101060                           
+        TOTAL   348657   251853    40632    45264   401209    63461    28848    29553
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:     3844                          16556
+         Native Heap:    19320                          20516
+                Code:    39148                         130520
+               Stack:     1340                           1344
+            Graphics:   121857                         121857
+       Private Other:   106976
+              System:    56172
+             Unknown:                                  110416
+ 
+           TOTAL PSS:   348657            TOTAL RSS:   401209       TOTAL SWAP PSS:    45264
+ 
+ Objects
+               Views:        9         ViewRootImpl:        1
+         AppContexts:        5           Activities:        1
+              Assets:       36        AssetManagers:        0
+       Local Binders:       23        Proxy Binders:       80
+       Parcel memory:       13         Parcel count:       41
+    Death Recipients:        0             WebViews:        0
+ 
+ Native Allocations
+                         Count                       Total(kB)
+                        ------                         ------
+    Other (malloced):      344                             31
+ Other (nonmalloced):      109                             78
+ 
+ SQL
+         MEMORY_USED:        0
+  PAGECACHE_OVERFLOW:        0          MALLOC_SIZE:        0
+ 
+ 
