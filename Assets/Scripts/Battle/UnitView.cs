@@ -19,6 +19,7 @@ namespace MTA.Battle
         RectTransform _rt, _artRt, _shadowRt, _barsRt; Text _name;
         Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
+        float _ghostHold, _lastTarget = 1f;   // HP ghost bar: delay before the lost-HP chunk drains
         bool _dead, _victory; float _deadTime, _spawnT = 1f; Vector2 _knock;
         Vector2 _impulse; float _reserveScale = 1f, _reserveDim = 1f;   // cinematic push + reserve staging
         public Vector2 combatOffset;    // view-driven fight choreography (dash / launch / slam)
@@ -104,7 +105,7 @@ namespace MTA.Battle
             bgrt.anchorMin = bgrt.anchorMax = new Vector2(0.5f, 0.5f);
             bgrt.sizeDelta = new Vector2(148, 14); bgrt.anchoredPosition = new Vector2(0, ART * 0.5f + 22f);
             bg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f); bg.GetComponent<Image>().raycastTarget = false;
-            _hpDelayed = MakeFill(bgrt, new Color(0.95f, 0.85f, 0.3f, 0.9f));
+            _hpDelayed = MakeFill(bgrt, new Color(0.95f, 0.3f, 0.28f, 0.92f));   // red "recently lost HP" ghost
             _hpFill = MakeFill(bgrt, new Color(0.3f, 0.9f, 0.3f, 1f));
 
             // Small floating name above the HP bar.
@@ -193,8 +194,14 @@ namespace MTA.Battle
             if (_rt == null) return;
             float dt = Time.deltaTime;
 
-            _dispFrac = Mathf.MoveTowards(_dispFrac, _targetFrac, 2.5f * dt);
-            _delayFrac = Mathf.MoveTowards(_delayFrac, _dispFrac, 0.8f * dt);
+            // HP ghost bar: the main fill drops INSTANTLY; the red ghost fill holds for
+            // 0.4 s then drains down to it (classic fighting-game "recently lost HP").
+            if (_targetFrac < _lastTarget - 0.0001f) _ghostHold = 0.4f;   // took damage → refresh the hold
+            _lastTarget = _targetFrac;
+            _dispFrac = _targetFrac;
+            if (_ghostHold > 0f) _ghostHold -= dt;
+            else _delayFrac = Mathf.MoveTowards(_delayFrac, _dispFrac, 1.4f * dt);
+            if (_delayFrac < _dispFrac) _delayFrac = _dispFrac;           // heal: ghost snaps up
             if (_hpFill != null) { _hpFill.fillAmount = _dispFrac; _hpFill.color = _dispFrac > 0.5f ? new Color(0.3f, 0.9f, 0.3f) : _dispFrac > 0.25f ? new Color(0.95f, 0.8f, 0.2f) : new Color(0.95f, 0.3f, 0.25f); }
             if (_hpDelayed != null) _hpDelayed.fillAmount = _delayFrac;
 

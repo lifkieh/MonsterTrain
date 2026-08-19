@@ -159,5 +159,26 @@ namespace MTA.App
             lbl.color = new Color(0.08f, 0.08f, 0.1f); lbl.raycastTarget = false;
             return rt;
         }
+
+        // Row of 5 star icons (rarity gold-filled, rest dim) — replaces the ***** text.
+        public static RectTransform StarRow(Transform parent, int rarity, Vector2 pos, float starSize)
+        {
+            var row = new GameObject("StarRow", typeof(RectTransform));
+            var rrt = row.GetComponent<RectTransform>(); rrt.SetParent(parent, false);
+            rrt.anchorMin = rrt.anchorMax = new Vector2(0.5f, 0.5f);
+            float step = starSize + 2f;
+            rrt.sizeDelta = new Vector2(step * 5f, starSize); rrt.anchoredPosition = pos;
+            float x0 = -(5 - 1) * step / 2f;
+            for (int i = 0; i < 5; i++)
+            {
+                var s = new GameObject("Star", typeof(RectTransform), typeof(Image));
+                var srt = s.GetComponent<RectTransform>(); srt.SetParent(rrt, false);
+                srt.anchorMin = srt.anchorMax = new Vector2(0.5f, 0.5f);
+                srt.sizeDelta = new Vector2(starSize, starSize); srt.anchoredPosition = new Vector2(x0 + i * step, 0);
+                var img = s.GetComponent<Image>(); img.sprite = MTA.Battle.ProceduralArt.Star(); img.raycastTarget = false;
+                img.color = i < rarity ? new Color(1f, 0.82f, 0.28f) : new Color(0.32f, 0.32f, 0.38f, 0.85f);
+            }
+            return rrt;
+        }
     }
 }

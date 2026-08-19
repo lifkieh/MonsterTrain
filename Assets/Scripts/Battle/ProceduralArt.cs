@@ -54,6 +54,21 @@ namespace MTA.Battle
             return inside ? 1f : 0f;
         });
 
+        // Filled 5-point star (rarity icon), one point straight up.
+        public static Sprite Star() => Make("star", 128, (x, y) =>
+        {
+            const float outer = 0.95f, inner = 0.42f;
+            float ang = Mathf.Atan2(y, x) + Mathf.PI / 2f;    // rotate a point to the top
+            float sector = Mathf.PI / 5f;                     // 36° → 10 vertices
+            float idx = Mathf.Floor(ang / sector);
+            float aLocal = (ang - idx * sector) / sector;     // 0..1 between two vertices
+            float r0 = Mathf.Repeat(idx, 2f) < 1f ? outer : inner;
+            float r1 = Mathf.Repeat(idx + 1f, 2f) < 1f ? outer : inner;
+            float edge = Mathf.Lerp(r0, r1, aLocal);          // straight star edges
+            float r = Mathf.Sqrt(x * x + y * y);
+            return Mathf.SmoothStep(1f, 0f, (r - edge) / 0.04f);
+        });
+
         // Ring / frame outline.
         public static Sprite Ring() => Make("ring", 128, (x, y) =>
         {

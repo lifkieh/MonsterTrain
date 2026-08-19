@@ -5,7 +5,9 @@ using UnityEngine.UI;
 
 namespace MTA.Battle
 {
-    // Pooled floating combat text: rises, fades, recycles itself back to the pool.
+    // Pooled floating combat text: pops in (scale 1.4→1.0), rises, holds then fades,
+    // recycles itself. Crits are bigger (caller-set size), shake, and live longer;
+    // light hits are smaller and shorter-lived so crits visually dominate.
     public class FloatingTextPool
     {
         readonly RectTransform _parent;
@@ -14,10 +16,12 @@ namespace MTA.Battle
 
         public FloatingTextPool(RectTransform parent, Font font) { _parent = parent; _font = font; }
 
-        public void Spawn(Vector2 pos, string text, Color color, int size)
+        public void Spawn(Vector2 pos, string text, Color color, int size) => Spawn(pos, text, color, size, 0.9f, false);
+
+        public void Spawn(Vector2 pos, string text, Color color, int size, float life, bool crit)
         {
             var f = _free.Count > 0 ? _free.Pop() : FloatingCombatText.Create(_parent, _font);
-            f.Show(pos, text, color, size, Recycle);
+            f.Show(pos, text, color, size, life, crit, Recycle);
         }
 
         void Recycle(FloatingCombatText f) => _free.Push(f);
@@ -25,7 +29,7 @@ namespace MTA.Battle
 
     public class FloatingCombatText : MonoBehaviour
     {
-        Text _t; RectTransform _rt; float _age, _life; Vector2 _start; bool _active;
+        Text _t; RectTransform _rt; float _age, _life; Vector2 _start; bool _active, _crit; Color _baseColor;
         Action<FloatingCombatText> _onDone;
 
         public static FloatingCombatText Create(RectTransform parent, Font font)
@@ -44,10 +48,14 @@ namespace MTA.Battle
         }
 
         public void Show(Vector2 pos, string text, Color color, int size, Action<FloatingCombatText> onDone)
+            => Show(pos, text, color, size, 0.9f, false, onDone);
+
+        public void Show(Vector2 pos, string text, Color color, int size, float life, bool crit, Action<FloatingCombatText> onDone)
         {
             _start = pos; _rt.anchoredPosition = pos;
-            _t.text = text; _t.color = color; _t.fontSize = size;
-            _age = 0; _life = 0.9f; _onDone = onDone; _active = true;
+            _t.text = text; _baseColor = color; _t.color = color; _t.fontSize = size;
+            _age = 0; _life = Mathf.Max(0.2f, life); _crit = crit; _onDone = onDone; _active = true;
+            _rt.localScale = Vector3.one * 1.4f;
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
         }
@@ -57,8 +65,11 @@ namespace MTA.Battle
             if (!_active) return;
             _age += Time.deltaTime;
             float p = _age / _life;
-            _rt.anchoredPosition = _start + new Vector2(0f, 70f * p);
-            var c = _t.color; c.a = Mathf.Clamp01(1f - p); _t.color = c;
+            float pop = Mathf.Lerp(1.4f, 1f, Mathf.Clamp01(_age / 0.15f));   // pop-in scale
+            float shakeX = _crit ? Mathf.Sin(_age * 70f) * 3f * (1f - p) : 0f;
+            _rt.localScale = Vector3.one * pop;
+            _rt.anchoredPosition = _start + new Vector2(shakeX, 60f * p);      // rise ~60 px
+            var c = _baseColor; c.a = Mathf.Clamp01(1f - p * p); _t.color = c; // hold, then fade out
             if (_age >= _life)
             {
                 _active = false;

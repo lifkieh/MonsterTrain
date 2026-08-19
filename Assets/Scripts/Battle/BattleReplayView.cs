@@ -52,6 +52,14 @@ namespace MTA.Battle
         const int GHOST_POOL = 16;
         Image[] _ghost; float[] _ghostA; int _ghostCur;
         Image _impactOverlay, _impactSil;
+
+        // --- Phase P fight HUD ---
+        struct HudRng { public ulong s; public ulong N() { s ^= s >> 12; s ^= s << 25; s ^= s >> 27; return s * 0x2545F4914F6CDD1DUL; } public float Range(float a, float b) => a + (b - a) * ((N() >> 40) / 16777216f); }
+        HudRng _hudRng;
+        const double COMBO_GAP = 1.2;         // sim-seconds gap that breaks the combo
+        Text _comboLabel; int _combo; double _comboLastT = -999; float _comboScale = 1f, _comboAlpha;
+        Text _splash; float _splashT, _splashDur, _splashShake; Color _splashColor;
+        RectTransform _letterTop, _letterBot; float _letterCur, _letterTarget;
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
@@ -101,6 +109,8 @@ namespace MTA.Battle
             _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f;
             _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
             _stageTime = 0f; _chargeClashed = false; _fillerQ = 0; _lastClashT = -1;
+            _combo = 0; _comboLastT = -999; _comboAlpha = 0f; _comboScale = 1f; _splashT = 0f; _letterCur = _letterTarget = 0f;
+            _hudRng.s = result.logHash == 0UL ? 0x9E3779B97F4A7C15UL : result.logHash;   // seeded number scatter
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
             _plan = EngagementPlanner.Plan(result, replay);               // tawuran engagement plan (seeded by logHash)
@@ -191,8 +201,43 @@ namespace MTA.Battle
                 _styleByKey[k] = (_styleMap != null && _styleMap.TryGetValue(u.speciesId, out var st)) ? st : AttackStyle.MeleeLunge;
             }
             BuildHud();
+            BuildFightHud();
+            Splash("ROUND 1", Color.white, 60f, 0.7f, 0f);   // FIGHT! follows on the opening-charge collision
             // Units start in formation (set by Build); the opening charge in
             // UpdateEngagement sprints both teams to the centre and they collide.
+        }
+
+        // Combo counter (one global), text splash, and letterbox bars — screen-fixed HUD.
+        void BuildFightHud()
+        {
+            _comboLabel = HudText(_root, "", 62, new Vector2(0, 470), new Vector2(700, 90), FontStyle.Bold);
+            _comboLabel.color = new Color(1, 1, 1, 0);
+            _splash = HudText(_root, "", 72, new Vector2(0, 150), new Vector2(1000, 160), FontStyle.Bold);
+            _splash.color = new Color(1, 1, 1, 0);
+
+            _letterTop = LetterBar(new Vector2(0.5f, 1f));
+            _letterBot = LetterBar(new Vector2(0.5f, 0f));
+        }
+
+        RectTransform LetterBar(Vector2 anchor)
+        {
+            var go = new GameObject("Letter", typeof(RectTransform), typeof(Image));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_root, false);
+            rt.anchorMin = rt.anchorMax = anchor; rt.pivot = anchor;
+            rt.sizeDelta = new Vector2(1500, 140); rt.anchoredPosition = new Vector2(0, anchor.y > 0.5f ? 140f : -140f);
+            var img = go.GetComponent<Image>(); img.color = new Color(0, 0, 0, 0.92f); img.raycastTarget = false;
+            return rt;
+        }
+
+        Text HudText(RectTransform parent, string s, int size, Vector2 pos, Vector2 sz, FontStyle style)
+        {
+            var go = new GameObject("HudTxt", typeof(RectTransform), typeof(Text));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(parent, false); rt.SetAsLastSibling();
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = sz; rt.anchoredPosition = pos;
+            var t = go.GetComponent<Text>(); t.font = _font; t.text = s; t.fontSize = size; t.fontStyle = style;
+            t.alignment = TextAnchor.MiddleCenter; t.color = Color.white; t.raycastTarget = false;
+            t.horizontalOverflow = HorizontalWrapMode.Overflow; t.verticalOverflow = VerticalWrapMode.Overflow;
+            return t;
         }
 
         // Fighting-game round pips: player team left, enemy right, screen-fixed.
@@ -283,7 +328,7 @@ namespace MTA.Battle
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
                 {
-                    _finishedFired = true; _playing = false; _zoomTarget = 1.12f;
+                    _finishedFired = true; _playing = false; _zoomTarget = 1.12f; _letterTarget = 0f;   // bars slide out on victory
                     foreach (var wu in _pb.Units)
                         if (wu.team == _pb.WinnerTeam && wu.Alive && _views.TryGetValue(Key(wu.team, wu.slot), out var wv))
                             wv.PlayVictory();
@@ -337,6 +382,8 @@ namespace MTA.Battle
                         if (ult) { _zoomTarget = 1.14f; ApplyCam(b.cam); }
                         break;
                     }
+
+                    RegisterCombo();   // same offensive-event set as Combo King
 
                     int tt = e.targetTeam, ts = e.targetSlot;
                     bool ranged = AttackStyles.IsRanged(st);
@@ -396,7 +443,8 @@ namespace MTA.Battle
                     }
                     if (b.endsBattle)
                     {
-                        _texts.Spawn(Formation(1 - e.targetTeam, 0) + new Vector2(0, 200), FinisherWord(b.finisher), CCrit, 40);
+                        _texts.Spawn(Formation(1 - e.targetTeam, 0) + new Vector2(0, 240), FinisherWord(b.finisher), CCrit, 40);
+                        Splash("K.O.!", CCrit, 96f, 1.5f, 6f);
                         ApplyCam(ChoreoCam.SlowMoFinisher);
                         if (dv != null) StartCoroutine(ImpactFrame(dv));   // finisher impact frame
                     }
@@ -436,7 +484,7 @@ namespace MTA.Battle
                     AudioManager.Play(Sfx.Hover);
                     yield return new WaitForSecondsRealtime(0.13f / sp);
                     T.PlayAttack(new Vector2(-dir.x, 0f), 70f, false);
-                    _texts.Spawn(A.BasePos + new Vector2(0, 74), "COUNTER", new Color(1f, 0.9f, 0.4f), 28);
+                    Splash("COUNTER!", new Color(1f, 0.9f, 0.4f), 64f, 0.8f, 5f);
                     _vfx.Play("hit_small", A.BasePos, 120f, Color.white);
                     A.PlayHit(false); A.Knock(dir, 40f); Shake(6f); AudioManager.Play(Sfx.Hit);
                     yield return new WaitForSecondsRealtime(0.12f / sp);
@@ -496,7 +544,7 @@ namespace MTA.Battle
                 T.Spin(900f, 0.16f);
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
-                _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), CCrit, 46);
+                DamageNumber(T.BasePos, b.amount, true, ult);
                 if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
                 T.Knock(dir, b.knockback); T.Squash(1.35f, 0.68f, 0.1f); T.Vibrate(3f, ult ? 0.15f : 0.09f);
                 Shake(ult ? 24f : 18f); FlashScreen(ult ? 0.7f : 0.5f); ZoomPunch(ult ? 0.12f : 0.08f);
@@ -547,7 +595,7 @@ namespace MTA.Battle
                     T.Squash(1.2f, 0.8f, 0.08f);
                     if (last)
                     {
-                        _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), b.crit ? CCrit : CWhite, b.crit ? 38 : 30);
+                        DamageNumber(T.BasePos, b.amount, b.crit, false);
                         T.Knock(dir, b.knockback);
                         if (b.crit) { T.Vibrate(2.5f, 0.06f); Shake(8f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
                     }
@@ -573,7 +621,7 @@ namespace MTA.Battle
                 T.PlayHit(b.crit);
                 _vfx.Play(b.crit ? "hit_impact" : "hit_small", T.BasePos, 150f, Color.white);
                 T.Knock(dir, b.knockback * 0.6f); T.Squash(1.2f, 0.8f, 0.08f); if (b.crit) T.Vibrate(2.5f, 0.06f);
-                _texts.Spawn(T.BasePos + Jitter(), b.amount.ToString(), b.crit ? CCrit : CWhite, b.crit ? 36 : 28);
+                DamageNumber(T.BasePos, b.amount, b.crit, false);
             }
             AudioManager.Play(b.crit ? Sfx.Crit : Sfx.Hit);
         }
@@ -596,7 +644,7 @@ namespace MTA.Battle
                 if (T != null) T.Squash(big ? 1.3f : 1.15f, big ? 0.72f : 0.85f, 0.08f);
                 if (last)
                 {
-                    _texts.Spawn(tp + Jitter(), b.amount.ToString(), (b.crit || ult) ? CCrit : CWhite, (b.crit || ult) ? 44 : 30);
+                    DamageNumber(tp, b.amount, b.crit, ult);
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); }
                     if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); HitStop(0.15f); }
                     else if (b.crit) { T?.Vibrate(2.5f, 0.09f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
@@ -806,6 +854,7 @@ namespace MTA.Battle
             _vfx.Play("hit_impact", new Vector2(80, -80), 200f, Color.white);
             StartCoroutine(Shockwave(new Vector2(0, -10), CCrit));
             Shake(16f); FlashScreen(0.5f); ZoomPunch(0.05f); AudioManager.Play(Sfx.Crit);
+            Splash("FIGHT!", CCrit, 84f, 0.9f, 5f);   // synced to the opening-charge collision
         }
 
         // Non-damaging filler beat (whiff / block / shove). NEVER spawns a damage number,
@@ -892,7 +941,7 @@ namespace MTA.Battle
                 case ChoreoCam.ZoomCombo: _zoomTarget = 1.06f; break;
                 case ChoreoCam.ShakeCrit: _zoomTarget = 1.08f; Shake(12f); ZoomPunch(0.05f); FlashScreen(0.5f); break;
                 case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); FlashScreen(0.8f); break;
-                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); break;
+                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); _letterTarget = 1f; break;
                 case ChoreoCam.ZoomWinner: _zoomTarget = 1.12f; break;
             }
         }
@@ -959,10 +1008,70 @@ namespace MTA.Battle
         void Shake(float mag) { float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
         void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt, 1.35f); }
 
+        // ---- Phase P HUD ----
+        // One global combo, fed by the same offensive-event set as Combo King (enemy-
+        // targeted Attack/Skill/Ultimate). A gap > COMBO_GAP resets it; it fades on a lull.
+        void RegisterCombo()
+        {
+            if (_clock - _comboLastT > COMBO_GAP) _combo = 0;
+            _comboLastT = _clock; _combo++;
+            _comboScale = 1.5f; _comboAlpha = 1f;
+            if (_comboLabel != null) { _comboLabel.text = _combo + " HITS!"; _comboLabel.color = ComboColor(_combo); }
+        }
+
+        static Color ComboColor(int n) =>
+            n >= 15 ? new Color(1f, 0.35f, 0.3f) : n >= 10 ? new Color(1f, 0.55f, 0.2f) : n >= 5 ? new Color(1f, 0.85f, 0.3f) : new Color(0.95f, 0.95f, 1f);
+
+        // Damage number at the victim with seeded scatter (never stacks). Light hits are
+        // small + short-lived; crits/ults big + long + shake, so real crits dominate.
+        void DamageNumber(Vector2 at, int amount, bool crit, bool ult)
+        {
+            Vector2 scatter = new Vector2(_hudRng.Range(-26f, 26f), _hudRng.Range(-8f, 34f));
+            int size = ult ? 52 : crit ? 46 : 30;
+            float life = ult ? 0.95f : crit ? 0.85f : 0.55f;
+            Color col = ult ? COrange : crit ? CCrit : CWhite;
+            _texts.Spawn(at + scatter, amount.ToString(), col, size, life, crit || ult);
+        }
+
+        void Splash(string text, Color color, float size, float dur, float shake)
+        {
+            if (_splash == null) return;
+            _splash.text = text; _splash.fontSize = (int)size; _splashColor = color;
+            _splashDur = Mathf.Max(0.3f, dur); _splashT = _splashDur; _splashShake = shake;
+        }
+
+        void HudTick()
+        {
+            float dt = Time.deltaTime;
+            if (_comboLabel != null)
+            {
+                _comboScale = Mathf.Lerp(_comboScale, 1f, 12f * dt);
+                _comboAlpha = Mathf.MoveTowards(_comboAlpha, 0f, dt / 1.1f);
+                bool show = _combo >= 2 && _comboAlpha > 0f;
+                var c = _comboLabel.color; c.a = show ? _comboAlpha : 0f; _comboLabel.color = c;
+                _comboLabel.rectTransform.localScale = Vector3.one * _comboScale;
+            }
+            if (_splash != null && _splashT > 0f)
+            {
+                _splashT -= dt;
+                float shown = _splashDur - _splashT;
+                float scale = Mathf.Lerp(1.7f, 1f, Mathf.Clamp01(shown / 0.22f));
+                float shk = _splashShake * Mathf.Sin(Time.time * 55f) * Mathf.Clamp01(1f - shown / 0.3f);
+                _splash.rectTransform.localScale = Vector3.one * scale;
+                _splash.rectTransform.anchoredPosition = new Vector2(shk, 150f);
+                var c = _splashColor; c.a = _splashT < 0.3f ? Mathf.Clamp01(_splashT / 0.3f) : 1f; _splash.color = c;
+            }
+            else if (_splash != null && _splash.color.a != 0f) { var c = _splash.color; c.a = 0f; _splash.color = c; }
+            _letterCur = Mathf.MoveTowards(_letterCur, _letterTarget, dt / 0.25f);
+            if (_letterTop != null) _letterTop.anchoredPosition = new Vector2(0, (1f - _letterCur) * 140f);
+            if (_letterBot != null) _letterBot.anchoredPosition = new Vector2(0, -(1f - _letterCur) * 140f);
+        }
+
         void UpdateCamera()
         {
             if (_stage == null) return;
             UpdateGhosts();
+            HudTick();
             Vector2 camOffset = _stage.anchoredPosition;
             if (_shakeT > 0f)
             {

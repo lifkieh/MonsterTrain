@@ -24,7 +24,7 @@ namespace MTA.App
         RectTransform _detail;
         Text _detailName, _detailStats, _detailXp;
         Image _detailXpFill;
-        RectTransform _detailArt;
+        RectTransform _detailArt, _detailStars;
         Button _evolveBtn;
         string _detailSpecies;
         RectTransform _career, _careerContent;
@@ -370,13 +370,16 @@ namespace MTA.App
         {
             _collection = UIFactory.Panel(parent, "CollectionPanel", new Color(0.09f, 0.1f, 0.13f));
             _collHeader = UIFactory.Label(_collection, "COLLECTION", 40, new Vector2(0, 880), new Vector2(1020, 80), _font);
+            // Role filter — 2 rows of 3 so long labels ("Support") never clip.
             string[] fl = { "All", "Tank", "Bruiser", "Assassin", "Mage", "Support" };
             for (int i = 0; i < fl.Length; i++)
             {
-                int fi = i - 1; float x = -450 + i * 180;
-                UIFactory.Button(_collection, fl[i], new Vector2(x, 770), new Vector2(168, 70), _font, () => { _collFilter = fi; RefreshCollection(); });
+                int fi = i - 1;
+                float x = -340 + (i % 3) * 340f;
+                float y = 808 - (i / 3) * 74f;
+                UIFactory.Button(_collection, fl[i], new Vector2(x, y), new Vector2(300, 62), _font, () => { _collFilter = fi; RefreshCollection(); });
             }
-            UIFactory.Button(_collection, "Sort", new Vector2(0, 686), new Vector2(240, 66), _font, () => { _collSortRarity = !_collSortRarity; RefreshCollection(); });
+            UIFactory.Button(_collection, "Sort", new Vector2(0, 662), new Vector2(220, 58), _font, () => { _collSortRarity = !_collSortRarity; RefreshCollection(); });
             var holder = new GameObject("CollContent", typeof(RectTransform));
             _collContent = holder.GetComponent<RectTransform>(); _collContent.SetParent(_collection, false);
             _collContent.anchorMin = _collContent.anchorMax = new Vector2(0.5f, 0.5f);
@@ -452,7 +455,7 @@ namespace MTA.App
                 var art = Portrait(tile, id, sp, Mathf.Min(size.x, size.y) * 0.72f);
                 art.anchoredPosition = new Vector2(0, 22);
                 UIFactory.ElementBadge(tile, sp.element, new Vector2(size.x / 2 - 32, size.y / 2 - 32), 46, _font);
-                UIFactory.Label(tile, MonsterMeta.Stars(MonsterMeta.Rarity(sp)), 22, new Vector2(0, -34), new Vector2(size.x - 20, 30), _font).color = new Color(1f, 0.85f, 0.3f);
+                UIFactory.StarRow(tile, MonsterMeta.Rarity(sp), new Vector2(0, -34), 18f);
             }
             else
             {
@@ -519,6 +522,8 @@ namespace MTA.App
             var sp = _reg.Get(id);
             var m = _profile.Find(id) ?? new MonsterSave { speciesId = id, level = 1 };
             _detailName.text = Nice(id) + "    Lv " + m.level;
+            if (_detailStars != null) Destroy(_detailStars.gameObject);
+            if (sp != null) _detailStars = UIFactory.StarRow(_detail, MonsterMeta.Rarity(sp), new Vector2(0, 762), 26f);
             if (_detailArt != null)
             {
                 for (int i = _detailArt.childCount - 1; i >= 0; i--) Destroy(_detailArt.GetChild(i).gameObject);
@@ -545,7 +550,7 @@ namespace MTA.App
         {
             string L(string n, Stat s) => n + ":  " + Eff(sp, lvl, s) + "   (+" + Lg(sp, s) + "/lvl)   next: " + Eff(sp, lvl + 1, s);
             return "Role: " + MonsterMeta.Role(sp) + "     Element: " + sp.element +
-                "     Rarity " + MonsterMeta.Stars(MonsterMeta.Rarity(sp)) + "\n\n" +
+                "     Rarity " + MonsterMeta.Rarity(sp) + "/5\n\n" +
                 L("HP", Stat.HP) + "\n" + L("ATK", Stat.ATK) + "\n" + L("DEF", Stat.DEF) + "\n" +
                 L("SPD", Stat.SPD) + "\n" + L("INT", Stat.INT) + "\n" + L("LUCK", Stat.LUCK);
         }
