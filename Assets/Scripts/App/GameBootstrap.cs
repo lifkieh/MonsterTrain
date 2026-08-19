@@ -741,9 +741,13 @@ namespace MTA.App
             var now = System.DateTime.Now;
             bool can = DailyRewards.CanClaim(_profile, now);
             int preview = DailyRewards.Preview(_profile, now);
+            int nextDay = Streaks.NextMilestoneDay(_profile);
+            string goal = nextDay > 0
+                ? "\n\nNext streak bonus:  Day " + nextDay + "  =  +" + Streaks.NextMilestoneCoins(_profile) + " coins"
+                : "\n\nAll streak bonuses claimed — legend!";
             _dailyInfo.text = "Login streak:  " + _profile.loginStreak + " day" + (_profile.loginStreak == 1 ? "" : "s") + "\n" +
                 "Coins:  " + _profile.coins + "\n\n" +
-                (can ? "Today's reward:  +" + preview + " coins" : "Claimed today — come back tomorrow!");
+                (can ? "Today's reward:  +" + preview + " coins" : "Claimed today — come back tomorrow!") + goal;
             _dailyClaimBtn.interactable = can;
             var h = _profile.rewardHistory;
             string s = "";
@@ -756,10 +760,14 @@ namespace MTA.App
             var r = DailyRewards.Claim(_profile, System.DateTime.Now);
             if (r.claimed)
             {
+                var ms = Streaks.CheckMilestones(_profile);                 // login-streak milestone bonuses
+                var newAch = Achievements.CheckNew(_profile, _roster.Count); // e.g. "Devoted" (30-day)
                 SaveSystem.Save(_profile);
                 MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Reward);
-                ShowPopup("DAILY REWARD", "Day " + r.streak + " streak!\n+" + r.coins + " coins" +
-                    (r.streakReset ? "\n(streak restarted)" : ""));
+                string body = "Day " + r.streak + " streak!\n+" + r.coins + " coins" + (r.streakReset ? "\n(streak restarted)" : "");
+                foreach (var m in ms) body += "\n\n★ " + m.Key + "-DAY STREAK BONUS!  +" + m.Value + " coins";
+                foreach (var a in newAch) body += "\n★ Achievement: " + a.title;
+                ShowPopup("DAILY REWARD", body);
             }
             RefreshDaily();
         }

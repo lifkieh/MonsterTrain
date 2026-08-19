@@ -38,7 +38,19 @@ namespace MTA.Meta
             new AchievementDef("level10",     "Seasoned Trainer",  "Reach Trainer level 10",     (s, t) => s.playerLevel >= 10),
             new AchievementDef("veteran",     "Veteran",           "Win 50 battles",             (s, t) => s.battlesWon >= 50),
             new AchievementDef("dexmaster",   "Master Collector",  "Discover every monster",     (s, t) => t > 0 && Discovered(s) >= t),
+            // Long-tail (retention): weeks of play.
+            new AchievementDef("centurion",   "Centurion",         "Win 100 battles",            (s, t) => s.battlesWon >= 100),
+            new AchievementDef("peak_form",   "Peak Form",         "Raise a monster to Lv 30",   (s, t) => MaxMonsterLevel(s) >= 30),
+            new AchievementDef("grand_champ", "Grand Champion",    "Complete all six leagues",   (s, t) => s.leaguesCompleted >= 6),
+            new AchievementDef("devoted",     "Devoted",           "Log in 30 days in a row",    (s, t) => s.loginStreak >= 30),
         };
+
+        public static int MaxMonsterLevel(SaveData s)
+        {
+            int m = 0;
+            for (int i = 0; i < s.collection.Count; i++) if (s.collection[i].level > m) m = s.collection[i].level;
+            return m;
+        }
 
         // Unlock any newly-earned achievements; return the freshly-earned defs (for toasts).
         public static List<AchievementDef> CheckNew(SaveData s, int totalSpecies)

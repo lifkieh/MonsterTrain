@@ -38,6 +38,11 @@ namespace MTA.Meta
             new QuestDef("mile_win50",  "Win 50 battles",        50, 400, 300, QuestKind.Milestone, s => s.battlesWon),
             new QuestDef("mile_league", "Complete a league",      1, 300, 240, QuestKind.Milestone, s => s.leaguesCompleted),
             new QuestDef("mile_combo",  "Land a 15-hit combo",   15, 260, 200, QuestKind.Milestone, s => s.bestCombo),
+            // Long-tail milestones (retention): the weeks-long chases.
+            new QuestDef("mile_win100", "Win 100 battles",      100, 600, 450, QuestKind.Milestone, s => s.battlesWon),
+            new QuestDef("mile_dex",    "Discover all monsters", 21, 500, 400, QuestKind.Milestone, s => Achievements.Discovered(s)),
+            new QuestDef("mile_evoall", "Evolve 3 monster lines", 3, 450, 350, QuestKind.Milestone, s => s.evolutionsDone),
+            new QuestDef("mile_maxlvl", "Reach Trainer Lv 30",   30, 500, 400, QuestKind.Milestone, s => s.playerLevel),
         };
 
         // Ensure daily counters/claims reset when the day rolls over.

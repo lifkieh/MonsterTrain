@@ -93,5 +93,22 @@ namespace MTA.Tests
             Assert.IsFalse(d.onboarded);
             Assert.AreEqual(0, d.bestWinStreak);
         }
+
+        [Test]
+        public void Streak_Milestones_Grant_Once_And_Escalate()
+        {
+            var s = Fresh();
+            s.loginStreak = 7;                       // reaches day-3 and day-7 milestones
+            long before = s.coins;
+            var g = Streaks.CheckMilestones(s);
+            Assert.AreEqual(2, g.Count);
+            Assert.AreEqual(before + 150 + 400, s.coins);
+            Assert.AreEqual(14, Streaks.NextMilestoneDay(s));
+            Assert.IsEmpty(Streaks.CheckMilestones(s), "milestones grant once");
+            s.loginStreak = 30;
+            var g2 = Streaks.CheckMilestones(s);     // now day-14 and day-30
+            Assert.AreEqual(2, g2.Count);
+            Assert.AreEqual(0, Streaks.NextMilestoneDay(s), "all claimed");
+        }
     }
 }

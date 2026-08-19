@@ -61,6 +61,7 @@ namespace MTA.Meta
         public List<QuestState> quests = new List<QuestState>();   // U
         public List<string> achievements = new List<string>();     // V: unlocked ids
         public List<string> seenNews = new List<string>();         // reserved
+        public List<int> streakMilestones = new List<int>();       // X+: claimed login-streak milestone days
 
         public MonsterSave Find(string speciesId)
         {

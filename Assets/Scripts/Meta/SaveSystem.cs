@@ -27,6 +27,7 @@ namespace MTA.Meta
                 if (d.quests == null) d.quests = new System.Collections.Generic.List<QuestState>();
                 if (d.achievements == null) d.achievements = new System.Collections.Generic.List<string>();
                 if (d.seenNews == null) d.seenNews = new System.Collections.Generic.List<string>();
+                if (d.streakMilestones == null) d.streakMilestones = new System.Collections.Generic.List<int>();
                 Migrate(d);
                 return d;
             }
