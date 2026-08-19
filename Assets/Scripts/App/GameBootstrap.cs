@@ -91,6 +91,11 @@ namespace MTA.App
             _profile = SaveSystem.Load() ?? Progression.NewGame(_obtainable);
             if (!_hadSave) SaveSystem.Save(_profile);
 
+            // The code-first scene has no Camera, so it also has no AudioListener — and with
+            // no AudioListener Unity plays NOTHING (music, sfx, ui all silent). Guarantee one.
+            if (FindObjectOfType<AudioListener>() == null)
+                new GameObject("AudioListener", typeof(AudioListener));
+
             MTA.Battle.AudioManager.Ensure();                       // audio feedback
             MTA.Battle.AudioManager.Muted = _profile.muted;
             MTA.Battle.AudioManager.PlayMusic(MTA.Battle.Music.Menu);
