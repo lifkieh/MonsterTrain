@@ -1284,6 +1284,7 @@ namespace MTA.App
             _view.rarities = _rarities;                   // VS-screen rarity stars
             int csi = _ctrl.Session.careerStageIndex;     // boss music on each league-finale stage
             _view.bossMusic = csi >= 0 && (csi + 1) % Career.PerLeague == 0;
+            _view.mode = _view.bossMusic ? MTA.Battle.BattleMode.Arena : MTA.Battle.BattleMode.Brawl;   // boss/finale = duel showcase, else brawl
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

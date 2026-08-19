@@ -8,6 +8,11 @@ using UnityEngine.UI;
 
 namespace MTA.Battle
 {
+    // Presentation mode (Phase AA). Brawl = all units fight concurrently in spread lanes;
+    // Arena = one active duel spotlighted centre with the reserves benched at the flanks.
+    // Chooses staging + camera only — the simulator/determinism are identical for both.
+    public enum BattleMode { Brawl, Arena }
+
     // Cinematic team-brawl replay (Phase O-1). Every living unit of BOTH teams stands
     // in a formation echelon and fights from second one — no off-screen reserves, no
     // run-in duels. The sim (BattleSimulator) already runs all six units on one
@@ -64,6 +69,7 @@ namespace MTA.Battle
         // --- Phase Q ceremony ---
         public Dictionary<string, int> rarities;   // species -> rarity (set before Play)
         public bool bossMusic;                       // set before Play for league-boss stages
+        public BattleMode mode = BattleMode.Brawl;   // Brawl = concurrent team fight; Arena = duel spotlight + benched reserves (boss/finale). Presentation only.
         RectTransform _vs, _vsLeft, _vsRight; Text _vsMid; Image _vsFlash; CanvasGroup _vsGroup; float _vsT; const float VS_DUR = 2.6f; bool _vsFlashed;
         RectTransform _superRoot; Image _superDim, _superSil, _superTint, _superCutin; Text _superBanner;
         Image _finDark; float _finDarkCur, _finDarkTarget;
@@ -989,6 +995,9 @@ namespace MTA.Battle
             bool charging = _stageTime < CHARGE_DUR;
             if (!_chargeClashed && _stageTime >= CHARGE_CONTACT) { _chargeClashed = true; OpeningClash(); }
 
+            if (mode == BattleMode.Arena) { UpdateArena(dt); return; }
+
+            // BRAWL: every living unit fights concurrently from its own spread lane.
             var units = _pb.Units;
             for (int i = 0; i < units.Count; i++)
             {
@@ -999,10 +1008,49 @@ namespace MTA.Battle
                 var v = View(u.team, u.slot); if (v == null || v.IsDead) continue;
 
                 Vector2 target = charging ? ChargeAnchor(u.team, u.slot) : EngageAnchor(u.team, u.slot, k);
-                float spd = charging ? 1700f : 540f;
+                float spd = charging ? 1700f : 520f;
                 v.SetBasePos(ClampArena(Vector2.MoveTowards(v.BasePos, target, spd * dt)));
             }
             if (!charging) Separate();
+        }
+
+        // ARENA: front-living fighter of each team duels centre; reserves benched small/dim
+        // at the flanks (boss/showcase presentation). Presentation only.
+        void UpdateArena(float dt)
+        {
+            int a0 = FrontLiving(0), a1 = FrontLiving(1);
+            var units = _pb.Units;
+            for (int i = 0; i < units.Count; i++)
+            {
+                var u = units[i];
+                if (!u.Alive) continue;
+                int k = Key(u.team, u.slot);
+                var v = View(u.team, u.slot); if (v == null || v.IsDead) continue;
+                bool active = k == a0 || k == a1;
+                v.SetReserve(!active);                                   // benched = 0.62 scale + dim
+                if (_busyUnits.Contains(k) || k == _spotlightTargetKey) continue;   // active duel choreo owns it
+                float side = u.team == 0 ? -1f : 1f;
+                Vector2 target = active
+                    ? new Vector2(side * 190f, -30f)                     // duel centre, own side
+                    : BenchAnchor(u.team, u.slot);                       // flank
+                float spd = active ? 560f : 940f;                        // reserves snap back to the bench fast
+                v.SetBasePos(ClampArena(Vector2.MoveTowards(v.BasePos, target, spd * dt)));
+            }
+        }
+
+        int FrontLiving(int team)
+        {
+            var units = _pb.Units; int best = -1, bestSlot = 999;
+            for (int i = 0; i < units.Count; i++)
+                if (units[i].team == team && units[i].Alive && units[i].slot < bestSlot) { bestSlot = units[i].slot; best = Key(team, units[i].slot); }
+            return best;
+        }
+
+        // Benched reserve: parked on the far flank, stacked by slot (team 0 left, team 1 right).
+        static Vector2 BenchAnchor(int team, int slot)
+        {
+            float side = team == 0 ? -1f : 1f;
+            return new Vector2(side * 452f, 150f - slot * 150f);
         }
 
         static Vector2 ChargeAnchor(int team, int slot)
@@ -1018,18 +1066,21 @@ namespace MTA.Battle
             Vector2 oppPos = (ov != null && !ov.IsDead) ? ov.BasePos : new Vector2(0f, -20f);
             float side = team == 0 ? -1f : 1f;
             bool ranged = AttackStyles.IsRanged(StyleOf(team, slot));
-            float gap = ranged ? 300f : 150f;
+            float gap = ranged ? 320f : 165f;
             float phase = _plan.idlePhase.TryGetValue(k, out var ph) ? ph : 0f;
             float t = (float)_clock;
 
-            float tx = oppPos.x + side * gap;                 // stand on your own side of the opponent
-            float ty = oppPos.y;
-            tx += Mathf.Cos(t * 1.6f + phase) * 26f;          // circling / living idle
-            ty += Mathf.Sin(t * 1.9f + phase) * 20f;
-            tx = Mathf.Lerp(tx, 0f, 0.16f);                   // scrum drift toward centre
-            if (ranged && ov != null && !ov.IsDead && Mathf.Abs(ov.BasePos.x - tx) < 250f)
-                tx += side * 150f;                            // kite: back off when the enemy closes
-            return new Vector2(tx, ty);
+            // Fight your opponent from YOUR side, but stay biased toward your spread lane so the
+            // six never collapse into one central pile. Circle a little so nobody is a statue.
+            Vector2 home = Formation(team, slot);              // front / mid / back spread
+            Vector2 near = new Vector2(oppPos.x + side * gap, oppPos.y);
+            Vector2 a = Vector2.Lerp(near, home, 0.5f);        // 50% home bias holds the lane
+            a.x += Mathf.Cos(t * 1.5f + phase) * 22f + Mathf.Sin(t * 0.7f + phase) * 10f;
+            a.y = Mathf.Lerp(a.y, home.y, 0.4f) + Mathf.Sin(t * 1.9f + phase) * 16f;   // hold your lane's height
+            a.x = team == 0 ? Mathf.Min(a.x, -70f) : Mathf.Max(a.x, 70f);   // never cross the centre line
+            if (ranged && ov != null && !ov.IsDead && Mathf.Abs(ov.BasePos.x - a.x) < 260f)
+                a.x += side * 150f;                            // kite: back off when the enemy closes
+            return a;
         }
 
         int CurrentOpp(int k)
@@ -1284,9 +1335,12 @@ namespace MTA.Battle
             _freezeBudget -= d;
             _hitstop = Mathf.Max(_hitstop, d);
         }
-        void Shake(float mag) { float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
-        void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt, 1.35f); }
-        void CamPush(Vector2 dir, float amt) { if (dir.sqrMagnitude > 0.0001f) _camPush += ((Vector2)dir).normalized * amt; }
+        // Camera aggressiveness by mode: Arena may punch; Brawl stays calm (6 units active,
+        // over-shake/over-zoom destroys readability — the brief's readability>spectacle rule).
+        float CamAggr => mode == BattleMode.Arena ? 1f : 0.5f;
+        void Shake(float mag) { mag *= CamAggr; float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
+        void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt * CamAggr, mode == BattleMode.Arena ? 1.35f : 1.14f); }
+        void CamPush(Vector2 dir, float amt) { if (dir.sqrMagnitude > 0.0001f) _camPush += ((Vector2)dir).normalized * amt * CamAggr; }
         // Lighter impact frame for crits — quick victim silhouette + screen pop, no full darken.
         void MicroImpact(UnitView v) { if (v == null) return; v.ImpactSilhouette(0.05f); FlashScreen(0.35f); }
 
@@ -1370,7 +1424,8 @@ namespace MTA.Battle
 
             float restZoom = _finishedFired ? 1.1f : 1f;   // wide default holds the whole brawl
             _zoomTarget = Mathf.Lerp(_zoomTarget, restZoom, 1.6f * Time.deltaTime);
-            _zoom = Mathf.Clamp(Mathf.Lerp(_zoom, _zoomTarget, 5.5f * Time.deltaTime), 0.9f, 1.35f);
+            float zoomCap = mode == BattleMode.Arena ? 1.35f : 1.12f;   // Brawl holds wide for readability
+            _zoom = Mathf.Clamp(Mathf.Lerp(_zoom, _zoomTarget, 5.5f * Time.deltaTime), 0.9f, zoomCap);
             _stage.localScale = Vector3.one * _zoom;
 
             _arena?.SetParallax(camOffset);
