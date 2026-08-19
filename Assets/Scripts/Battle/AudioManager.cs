@@ -121,7 +121,7 @@ namespace MTA.Battle
         readonly Dictionary<Music, AudioClip> _music = new Dictionary<Music, AudioClip>();
         AudioSource[] _pool; int _next;
         AudioSource _musicA, _musicB, _activeSrc, _oldSrc;
-        Music _current = Music.None; float _intensity = 0f, _fade = 1f;
+        Music _current = Music.None; float _intensity = 0f, _fade = 1f, _duckT;
 
         public static AudioManager Ensure()
         {
@@ -213,6 +213,10 @@ namespace MTA.Battle
         public static void PlayMusic(Music m) { if (Instance != null) Instance.PlayMusicInternal(m); }
         public static void StopMusic() { if (Instance != null) { Instance._current = Music.None; } }
         public static void SetBattleIntensity(float x) { if (Instance != null) Instance._intensity = Mathf.Clamp01(x); }
+        // Final-finisher music moment: duck the track (so the KO cuts through) then let it
+        // swell back, plus a low bass boom. Called on the finishing blow.
+        public static void SetFinisher() { if (Instance != null) Instance.FinisherInternal(); }
+        void FinisherInternal() { _duckT = Mathf.Max(_duckT, 1.0f); if (!Muted) PlayPitchedInternal(Sfx.Bass, 0.66f, 1.2f); }
 
         void PlayMusicInternal(Music m)
         {
@@ -229,8 +233,10 @@ namespace MTA.Battle
         {
             if (_musicA == null) return;
             _fade = Mathf.Min(1f, _fade + Time.unscaledDeltaTime * 1.5f);
-            float target = Muted ? 0f : MusicVolume * (0.75f + 0.25f * _intensity);
-            if (_activeSrc != null) { _activeSrc.volume = target * _fade; _activeSrc.pitch = 1f + 0.06f * _intensity; }
+            float duck = 1f;
+            if (_duckT > 0f) { _duckT -= Time.unscaledDeltaTime; duck = Mathf.Lerp(1.1f, 0.4f, Mathf.Clamp01(_duckT)); }   // KO: dip → swell
+            float target = Muted ? 0f : MusicVolume * (0.7f + 0.35f * _intensity) * duck;   // wider dynamic range
+            if (_activeSrc != null) { _activeSrc.volume = target * _fade; _activeSrc.pitch = 1f + 0.09f * _intensity; }
             if (_oldSrc != null)
             {
                 _oldSrc.volume = MusicVolume * (1f - _fade);

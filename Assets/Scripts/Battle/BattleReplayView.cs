@@ -63,6 +63,7 @@ namespace MTA.Battle
 
         // --- Phase Q ceremony ---
         public Dictionary<string, int> rarities;   // species -> rarity (set before Play)
+        public bool bossMusic;                       // set before Play for league-boss stages
         RectTransform _vs, _vsLeft, _vsRight; Text _vsMid; Image _vsFlash; CanvasGroup _vsGroup; float _vsT; const float VS_DUR = 2.6f; bool _vsFlashed;
         RectTransform _superRoot; Image _superDim, _superSil, _superTint, _superCutin; Text _superBanner;
         Image _finDark; float _finDarkCur, _finDarkTarget;
@@ -122,7 +123,7 @@ namespace MTA.Battle
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
             _plan = EngagementPlanner.Plan(result, replay);               // tawuran engagement plan (seeded by logHash)
-            AudioManager.PlayMusic(Music.Battle);
+            AudioManager.PlayMusic(bossMusic ? Music.Boss : Music.Battle);
 
             // Auto-pace: 15–60 s window; close matches longer, stomps faster.
             double sim = Math.Max(1.0, result.duration);
@@ -497,11 +498,14 @@ namespace MTA.Battle
                     if (_views.TryGetValue(Key(u.team, u.slot), out var v)) v.SetHp(u.currentHp);
                 UpdatePips();
 
-                // Dynamic battle audio: intensify as it gets close / down to the wire.
-                int aliveA = _pb.AliveCount(0), aliveB = _pb.AliveCount(1);
-                float closeness = 1f - Mathf.Abs(aliveA - aliveB) * 0.34f;
-                float climax = (aliveA + aliveB) <= 1 ? 1f : ((aliveA + aliveB) <= 2 ? 0.6f : 0f);
-                AudioManager.SetBattleIntensity(Mathf.Clamp01(Mathf.Max(closeness * 0.5f, climax)));
+                // Dynamic mixing — four states drive the music intensity:
+                //   normal → close (teams even) → last-monster-alive (climax) → finisher (duck).
+                int aliveA = _pb.AliveCount(0), aliveB = _pb.AliveCount(1), total = aliveA + aliveB;
+                float intensity;
+                if (total <= 2) intensity = 1f;                                   // last monsters alive → full climax
+                else if (aliveA == aliveB) intensity = 0.7f;                       // close / even trade
+                else intensity = 0.35f * (1f - Mathf.Abs(aliveA - aliveB) * 0.25f); // normal, ebbs with the lead
+                AudioManager.SetBattleIntensity(Mathf.Clamp01(intensity));
 
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
@@ -636,6 +640,7 @@ namespace MTA.Battle
                     {
                         _texts.Spawn(Formation(1 - e.targetTeam, 0) + new Vector2(0, 240), FinisherWord(b.finisher), CCrit, 40);
                         Splash("K.O.!", CCrit, 96f, 1.5f, 6f);
+                        AudioManager.SetFinisher();   // music ducks then swells for the finishing blow
                         ApplyCam(ChoreoCam.SlowMoFinisher);
                         if (dv != null) StartCoroutine(ImpactFrame(dv));   // finisher impact frame
                     }
@@ -674,7 +679,7 @@ namespace MTA.Battle
                     T.Dodge(new Vector2(-dir.x, 0.3f));
                     _texts.Spawn(T.BasePos + new Vector2(0, 80), "MISS", CDodge, 34);
                     _vfx.Play("puff", T.BasePos, 150f, new Color(1f, 1f, 1f, 0.9f));
-                    AudioManager.Play(Sfx.Hover);
+                    AudioManager.PlayPitched(Sfx.Whoosh, 1.15f, 0.9f);   // distinct dodge swish
                     yield return new WaitForSecondsRealtime(0.13f / sp);
                     T.PlayAttack(new Vector2(-dir.x, 0f), 70f, false);
                     Splash("COUNTER!", new Color(1f, 0.9f, 0.4f), 64f, 0.8f, 5f); AudioManager.Announce(Sfx.VoCounter);

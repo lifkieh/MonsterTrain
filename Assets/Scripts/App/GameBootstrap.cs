@@ -1275,6 +1275,8 @@ namespace MTA.App
             _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
             _view.displayNames = _displayNames;           // Title Case names over fighters
             _view.rarities = _rarities;                   // VS-screen rarity stars
+            int csi = _ctrl.Session.careerStageIndex;     // boss music on each league-finale stage
+            _view.bossMusic = csi >= 0 && (csi + 1) % Career.PerLeague == 0;
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 
