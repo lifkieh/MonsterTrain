@@ -29,8 +29,18 @@ namespace MTA.App.EditorTools
                 ti.SaveAndReimport();
                 n++;
             }
+            // Re-point-filter the pixelated VFX / arena / UI packs so the whole game is one style.
+            foreach (var folder in new[] { "Assets/Resources/Vfx", "Assets/Resources/Arena", "Assets/Resources/Ui" })
+                foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { folder }))
+                {
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    var ti = AssetImporter.GetAtPath(path) as TextureImporter;
+                    if (ti == null) continue;
+                    ti.filterMode = FilterMode.Point; ti.mipmapEnabled = false;
+                    ti.SaveAndReimport(); n++;
+                }
             AssetDatabase.Refresh();
-            Debug.Log("MTA: imported " + n + " monster sprites as Sprite.");
+            Debug.Log("MTA: imported/re-point-filtered " + n + " textures (pixel-art pass).");
         }
 
         // Pin monster sprites to uncompressed RGBA32 on Android so 64px pixel art stays
@@ -65,19 +75,19 @@ namespace MTA.App.EditorTools
             }
             else if (p.Contains("/Resources/Vfx/") || p.Contains("/Resources/Arena/"))
             {
-                var ti = (TextureImporter)assetImporter;   // RawImage textures: no mipmap, clamp
+                var ti = (TextureImporter)assetImporter;   // pixelated VFX / arena: POINT filter (pixel-art)
                 ti.textureType = TextureImporterType.Default;
                 ti.mipmapEnabled = false;
                 ti.wrapMode = TextureWrapMode.Clamp;
-                ti.filterMode = FilterMode.Bilinear;
+                ti.filterMode = FilterMode.Point;
                 ti.alphaIsTransparency = true;
             }
             else if (p.Contains("/Resources/Ui/"))
             {
-                var ti = (TextureImporter)assetImporter;   // 9-slice UI sprites
+                var ti = (TextureImporter)assetImporter;   // 9-slice UI sprites — POINT (pixel-art)
                 ti.textureType = TextureImporterType.Sprite;
                 ti.spriteImportMode = SpriteImportMode.Single;
-                ti.filterMode = FilterMode.Bilinear;
+                ti.filterMode = FilterMode.Point;
                 ti.mipmapEnabled = false;
                 ti.spriteBorder = new Vector4(20, 20, 20, 20);
                 ti.alphaIsTransparency = true;

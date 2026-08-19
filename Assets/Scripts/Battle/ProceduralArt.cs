@@ -3,9 +3,11 @@ using UnityEngine;
 
 namespace MTA.Battle
 {
-    // Runtime-generated sprites (discs, glows, triangles, rings) so the game can
-    // draw real shapes instead of flat rectangles — no art assets, works on Android.
-    // Sprites are white and tinted per-use via Image.color; each is cached once.
+    // Runtime-generated PIXEL-ART shapes (discs, glows, triangles, rings, stars) so the
+    // game draws real shapes that match the 64px pixel monster sprites — no smoothing.
+    // Art direction A (Pokémon-style pixel art): low internal resolution, POINT filter,
+    // and a hard 3-step alpha edge so every generated shape reads as chunky pixels. White,
+    // tinted per-use via Image.color; cached once. (See docs/STYLE_GUIDE.md.)
     public static class ProceduralArt
     {
         static readonly Dictionary<string, Sprite> _cache = new Dictionary<string, Sprite>();
@@ -13,7 +15,8 @@ namespace MTA.Battle
         static Sprite Make(string key, int size, System.Func<float, float, float> alphaAt)
         {
             if (_cache.TryGetValue(key, out var s) && s != null) return s;
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            // Point filter + no mipmaps = crisp pixels, consistent with the pixel monsters.
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Point };
             var px = new Color32[size * size];
             float c = (size - 1) * 0.5f;
             for (int y = 0; y < size; y++)
@@ -21,7 +24,8 @@ namespace MTA.Battle
                 {
                     float nx = (x - c) / c, ny = (y - c) / c;      // -1..1
                     float a = Mathf.Clamp01(alphaAt(nx, ny));
-                    px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255));
+                    a = a < 0.30f ? 0f : (a < 0.72f ? 0.5f : 1f);  // hard 3-step edge → chunky pixel outline
+                    px[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
                 }
             tex.SetPixels32(px); tex.Apply(false, false);
             s = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
@@ -29,65 +33,63 @@ namespace MTA.Battle
             return s;
         }
 
-        // Filled disc with a soft 6% edge.
-        public static Sprite Disc() => Make("disc", 128, (x, y) =>
+        // Filled disc.
+        public static Sprite Disc() => Make("disc", 32, (x, y) =>
         {
             float r = Mathf.Sqrt(x * x + y * y);
-            return Mathf.SmoothStep(1f, 0f, (r - 0.92f) / 0.08f);
+            return Mathf.SmoothStep(1f, 0f, (r - 0.90f) / 0.10f);
         });
 
-        // Radial glow (bright center → transparent edge), for auras and rarity glow.
-        public static Sprite Glow() => Make("glow", 128, (x, y) =>
+        // Radial "glow" — quantized to a hard disc with a one-step falloff (pixel-safe).
+        public static Sprite Glow() => Make("glow", 32, (x, y) =>
         {
             float r = Mathf.Sqrt(x * x + y * y);
-            float a = 1f - Mathf.Clamp01(r);
-            return a * a;                                          // soft falloff
+            return 1f - Mathf.Clamp01(r);
         });
 
-        // Upward-pointing triangle (horns, claws, wings, arrows).
-        public static Sprite Triangle() => Make("tri", 128, (x, y) =>
+        // Upward-pointing triangle (horns, claws, debris).
+        public static Sprite Triangle() => Make("tri", 32, (x, y) =>
         {
-            // inside triangle with apex at top (0,1), base y=-1, half-width shrinking upward
-            float t = (y + 1f) * 0.5f;                             // 0 at base, 1 at apex
+            float t = (y + 1f) * 0.5f;
             float halfW = Mathf.Lerp(1f, 0f, t);
             bool inside = y >= -1f && y <= 1f && Mathf.Abs(x) <= halfW;
             return inside ? 1f : 0f;
         });
 
         // Filled 5-point star (rarity icon), one point straight up.
-        public static Sprite Star() => Make("star", 128, (x, y) =>
+        public static Sprite Star() => Make("star", 32, (x, y) =>
         {
             const float outer = 0.95f, inner = 0.42f;
-            float ang = Mathf.Atan2(y, x) + Mathf.PI / 2f;    // rotate a point to the top
-            float sector = Mathf.PI / 5f;                     // 36° → 10 vertices
+            float ang = Mathf.Atan2(y, x) + Mathf.PI / 2f;
+            float sector = Mathf.PI / 5f;
             float idx = Mathf.Floor(ang / sector);
-            float aLocal = (ang - idx * sector) / sector;     // 0..1 between two vertices
+            float aLocal = (ang - idx * sector) / sector;
             float r0 = Mathf.Repeat(idx, 2f) < 1f ? outer : inner;
             float r1 = Mathf.Repeat(idx + 1f, 2f) < 1f ? outer : inner;
-            float edge = Mathf.Lerp(r0, r1, aLocal);          // straight star edges
+            float edge = Mathf.Lerp(r0, r1, aLocal);
             float r = Mathf.Sqrt(x * x + y * y);
-            return Mathf.SmoothStep(1f, 0f, (r - edge) / 0.04f);
+            return r <= edge ? 1f : 0f;
         });
 
         // Ring / frame outline.
-        public static Sprite Ring() => Make("ring", 128, (x, y) =>
+        public static Sprite Ring() => Make("ring", 32, (x, y) =>
         {
             float r = Mathf.Sqrt(x * x + y * y);
-            float band = 1f - Mathf.Abs(r - 0.86f) / 0.14f;
+            float band = 1f - Mathf.Abs(r - 0.82f) / 0.18f;
             return Mathf.Clamp01(band);
         });
 
-        // Soft rounded square (cards / panels).
-        public static Sprite RoundedRect() => Make("rrect", 96, (x, y) =>
+        // Rounded square (cards / panels) — chunky pixel-beveled corners.
+        public static Sprite RoundedRect() => Make("rrect", 48, (x, y) =>
         {
-            float corner = 0.28f;
+            float corner = 0.30f;
             float dx = Mathf.Max(0f, Mathf.Abs(x) - (1f - corner));
             float dy = Mathf.Max(0f, Mathf.Abs(y) - (1f - corner));
             float d = Mathf.Sqrt(dx * dx + dy * dy) / corner;
-            return Mathf.SmoothStep(1f, 0f, (d - 0.9f) / 0.1f);
+            return d <= 1f ? 1f : 0f;
         });
 
-        // Vertical gradient (opaque top → transparent bottom) for backgrounds.
-        public static Sprite VGradient() => Make("vgrad", 4, (x, y) => (y + 1f) * 0.5f);
+        // Vertical gradient (opaque top → transparent bottom) — low-res, quantized to bands.
+        public static Sprite VGradient() => Make("vgrad", 8, (x, y) => (y + 1f) * 0.5f);
     }
 }

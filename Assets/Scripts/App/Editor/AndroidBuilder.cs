@@ -83,32 +83,40 @@ namespace MTA.App.EditorTools
             catch (System.Exception e) { Debug.LogWarning("MTA: splash branding skipped — " + e.Message); }
         }
 
-        // A simple, recognizable monster mark: gradient field + glowing body orb + eyes.
+        // PIXEL-ART monster-face icon (art direction A): drawn at a low resolution with hard
+        // edges + a limited palette, then nearest-neighbour upscaled to the target size so it
+        // reads as chunky pixels consistent with the in-game sprites.
         static Texture2D MakeIcon(int size)
         {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            var px = new Color32[size * size];
+            const int lo = 32;                          // pixel-art source resolution
+            var small = new Color32[lo * lo];
             var top = new Color(0.16f, 0.55f, 0.95f);
-            var bot = new Color(0.45f, 0.2f, 0.75f);
+            var bot = new Color(0.30f, 0.16f, 0.55f);
             var body = new Color(0.98f, 0.85f, 0.35f);
-            float cx = size * 0.5f, cy = size * 0.46f, rBody = size * 0.30f;
-            float eyeR = size * 0.05f, eyeDx = size * 0.11f, eyeDy = size * 0.04f;
-            for (int y = 0; y < size; y++)
+            var bodyDark = new Color(0.80f, 0.62f, 0.18f);
+            var eye = new Color(0.10f, 0.10f, 0.14f);
+            float cx = lo * 0.5f, cy = lo * 0.52f, rBody = lo * 0.32f;
+            float eyeR = lo * 0.07f, eyeDx = lo * 0.13f, eyeDy = lo * 0.05f;
+            for (int y = 0; y < lo; y++)
             {
-                float t = (float)y / (size - 1);
-                var bg = Color.Lerp(bot, top, t);
-                for (int x = 0; x < size; x++)
+                float t = (float)y / (lo - 1);
+                var bg = Color.Lerp(bot, top, Mathf.Round(t * 4f) / 4f);   // banded gradient (limited palette)
+                for (int x = 0; x < lo; x++)
                 {
                     var c = bg;
                     float db = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                    if (db < rBody) c = Color.Lerp(body, bg, Mathf.SmoothStep(0.75f, 1f, db / rBody));
-                    // eyes
-                    float e1 = Mathf.Sqrt((x - (cx - eyeDx)) * (x - (cx - eyeDx)) + (y - (cy + eyeDy)) * (y - (cy + eyeDy)));
-                    float e2 = Mathf.Sqrt((x - (cx + eyeDx)) * (x - (cx + eyeDx)) + (y - (cy + eyeDy)) * (y - (cy + eyeDy)));
-                    if (e1 < eyeR || e2 < eyeR) c = new Color(0.1f, 0.1f, 0.14f);
-                    px[y * size + x] = c;
+                    if (db < rBody) c = db < rBody * 0.7f ? body : bodyDark;   // hard body + rim (cel shade)
+                    float e1 = Mathf.Sqrt((x - (cx - eyeDx)) * (x - (cx - eyeDx)) + (y - (cy - eyeDy)) * (y - (cy - eyeDy)));
+                    float e2 = Mathf.Sqrt((x - (cx + eyeDx)) * (x - (cx + eyeDx)) + (y - (cy - eyeDy)) * (y - (cy - eyeDy)));
+                    if (e1 < eyeR || e2 < eyeR) c = eye;
+                    small[y * lo + x] = c;
                 }
             }
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
+            var px = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                    px[y * size + x] = small[(y * lo / size) * lo + (x * lo / size)];   // nearest upscale
             tex.SetPixels32(px);
             tex.Apply(false, false);
             return tex;
