@@ -75,6 +75,7 @@ namespace MTA.Battle
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
         float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
+        Vector2 _camPush;   // directional camera language on big hits
         float _slowmo = 1f, _slowmoT;
         Image _screenFlash; float _flashT;
 
@@ -112,7 +113,7 @@ namespace MTA.Battle
         {
             _font = font; _root = parent; _replay = replay; _styleMap = styleMap; _rIdx = 0;
             _clock = 0; _playing = true; _finishedFired = false;
-            _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f;
+            _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f; _camPush = Vector2.zero;
             _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
             _stageTime = 0f; _chargeClashed = false; _fillerQ = 0; _lastClashT = -1;
             _combo = 0; _comboLastT = -999; _comboAlpha = 0f; _comboScale = 1f; _splashT = 0f; _letterCur = _letterTarget = 0f;
@@ -629,6 +630,7 @@ namespace MTA.Battle
                         _vfx.Play("explosion", dv.BasePos, b.endsBattle ? 340f : 240f, Color.white);
                         _arena?.React(b.endsBattle ? ArenaReact.KO : ArenaReact.Debris, Ground(dv.BasePos));   // full arena reaction on the finisher
                         CrowdFlinch(Key(e.targetTeam, e.targetSlot), -1, -1, dv.BasePos, 280f);   // scrum recoils from the KO
+                        CamPush(knock, b.endsBattle ? 60f : 44f);   // camera lurches with the KO
                     }
                     if (b.endsBattle)
                     {
@@ -741,6 +743,8 @@ namespace MTA.Battle
                 DamageNumber(T.BasePos, b.amount, true, ult);
                 if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
                 T.Knock(dir, b.knockback); T.Squash(1.35f, 0.68f, 0.1f); T.Vibrate(3f, ult ? 0.15f : 0.09f);
+                A.Knock(-dir, 34f); T.Launch(ult ? 60f : 40f); CamPush(dir, ult ? 56f : 42f);   // recoil + pop + camera push
+                if (!ult) MicroImpact(T);
                 Shake(ult ? 24f : 18f); FlashScreen(ult ? 0.7f : 0.5f); ZoomPunch(ult ? 0.12f : 0.08f);
                 StartCoroutine(Shockwave(T.BasePos, ult ? new Color(1f, 0.6f, 0.2f) : CCrit));
                 if (ult) StartCoroutine(ImpactFrame(T));   // impact frame only on ultimates (+ finisher)
@@ -775,10 +779,11 @@ namespace MTA.Battle
                 if (A == null || T == null) yield break;
                 Vector2 dir = new Vector2(at == 0 ? 1f : -1f, 0f);
                 float sp = Mathf.Clamp(speedMultiplier, 0.5f, 4f);
+                Color gtint = elementColors != null && elementColors.TryGetValue(actorSp, out var gec) ? gec : Color.white;
                 float gap = Mathf.Abs(T.BasePos.x - A.BasePos.x);
                 Vector2 close = new Vector2(dir.x * (gap - 170f), (as_ - 1) * 34f);
 
-                yield return MoveOffset(A, Vector2.zero, close, 0.14f / sp);
+                yield return MoveOffset(A, Vector2.zero, close, 0.14f / sp, true, gtint);   // afterimages on the dash
                 int n = Mathf.Clamp(b.hits, 1, 3);
                 for (int i = 0; i < n; i++)
                 {
@@ -787,12 +792,13 @@ namespace MTA.Battle
                     _vfx.Play(last && b.crit ? "hit_impact" : "hit_small", T.BasePos + ComboJit(i), last ? 150f : 120f, Color.white);
                     AudioManager.Play(b.crit && last ? Sfx.Crit : Sfx.Hit);
                     T.Squash(1.2f, 0.8f, 0.08f);
+                    A.Knock(-dir, last ? 20f : 10f);   // attacker recoils off the impact
                     if (last)
                     {
                         DamageNumber(T.BasePos, b.amount, b.crit, false);
                         T.Knock(dir, b.knockback);
                         _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
-                        if (b.crit) { T.Vibrate(2.5f, 0.06f); Shake(8f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
+                        if (b.crit) { T.Vibrate(2.5f, 0.06f); T.Launch(50f); MicroImpact(T); CamPush(dir, 26f); Shake(9f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
                     }
                     yield return new WaitForSecondsRealtime(0.05f / sp);
                 }
@@ -818,7 +824,9 @@ namespace MTA.Battle
                 T.Knock(dir, b.knockback * 0.6f); T.Squash(1.2f, 0.8f, 0.08f); if (b.crit) T.Vibrate(2.5f, 0.06f);
                 _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
                 DamageNumber(T.BasePos, b.amount, b.crit, false);
+                if (b.crit) { T.Launch(40f); MicroImpact(T); CamPush(dir, 20f); }
             }
+            A.Knock(-dir, 14f);   // attacker recoil
             AudioManager.Play(b.crit ? Sfx.Crit : Sfx.Hit);
         }
 
@@ -842,8 +850,9 @@ namespace MTA.Battle
                 {
                     DamageNumber(tp, b.amount, b.crit, ult);
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); _arena?.React(big ? ArenaReact.Shockwave : b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(tp)); }
-                    if (big) { T?.Vibrate(3f, 0.15f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
-                    else if (b.crit) { T?.Vibrate(2.5f, 0.09f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
+                    Vector2 kdir = new Vector2(at == 0 ? 1f : -1f, 0f);
+                    if (big) { T?.Vibrate(3f, 0.15f); T?.Launch(50f); CamPush(kdir, 48f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
+                    else if (b.crit) { T?.Vibrate(2.5f, 0.09f); T?.Launch(40f); MicroImpact(T); CamPush(kdir, 26f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
                 }
                 yield return new WaitForSecondsRealtime(0.05f / sp);
             }
@@ -1205,6 +1214,9 @@ namespace MTA.Battle
         }
         void Shake(float mag) { float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
         void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt, 1.35f); }
+        void CamPush(Vector2 dir, float amt) { if (dir.sqrMagnitude > 0.0001f) _camPush += ((Vector2)dir).normalized * amt; }
+        // Lighter impact frame for crits — quick victim silhouette + screen pop, no full darken.
+        void MicroImpact(UnitView v) { if (v == null) return; v.ImpactSilhouette(0.05f); FlashScreen(0.35f); }
 
         // ---- Phase P HUD ----
         // One global combo, fed by the same offensive-event set as Combo King (enemy-
@@ -1272,15 +1284,17 @@ namespace MTA.Battle
             if (_stage == null) return;
             UpdateGhosts();
             HudTick();
-            Vector2 camOffset = _stage.anchoredPosition;
+            _camPush = Vector2.Lerp(_camPush, Vector2.zero, 6f * Time.deltaTime);   // directional push eases back
+            Vector2 shake = Vector2.zero;
             if (_shakeT > 0f)
             {
                 _shakeT -= Time.deltaTime;
                 float m = _shakeMag * Mathf.Clamp01(_shakeT / _shakeDur);
-                _stage.anchoredPosition = new Vector2(UnityEngine.Random.Range(-m, m), UnityEngine.Random.Range(-m, m));
-                if (_shakeT <= 0f) { _shakeMag = 0f; _stage.anchoredPosition = Vector2.zero; }
+                shake = new Vector2(UnityEngine.Random.Range(-m, m), UnityEngine.Random.Range(-m, m));
+                if (_shakeT <= 0f) _shakeMag = 0f;
             }
-            else _stage.anchoredPosition = Vector2.Lerp(_stage.anchoredPosition, Vector2.zero, 12f * Time.deltaTime);
+            Vector2 camOffset = _camPush + shake;
+            _stage.anchoredPosition = camOffset;
 
             float restZoom = _finishedFired ? 1.1f : 1f;   // wide default holds the whole brawl
             _zoomTarget = Mathf.Lerp(_zoomTarget, restZoom, 1.6f * Time.deltaTime);

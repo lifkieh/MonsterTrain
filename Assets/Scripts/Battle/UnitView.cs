@@ -31,6 +31,7 @@ namespace MTA.Battle
         float _spinT, _spinSpeed, _spinAngle;               // launcher/slam spin + lean settle
         float _vibT, _vibMag;                               // hit-stop vibrate
         float _impSilT;                                     // impact-frame white silhouette
+        float _extraTilt;                                   // hit head-snap rotation (decays)
 
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
@@ -175,18 +176,28 @@ namespace MTA.Battle
             if (_artRt == null) return;
             Vector2 sq = Vector2.one;
             if (_sqT > 0f) { _sqT -= dt; float e = Mathf.Clamp01(_sqT / _sqDur); sq = Vector2.Lerp(Vector2.one, _sqCur, e); }
-            float ax = Mathf.Clamp(Mathf.Abs(_vel.x) * 0.00035f, 0f, 0.16f);   // stretch along motion
-            float ay = Mathf.Clamp(Mathf.Abs(_vel.y) * 0.00035f, 0f, 0.16f);
+            float ax = Mathf.Clamp(Mathf.Abs(_vel.x) * 0.0005f, 0f, 0.30f);    // stretch along motion (motion smear)
+            float ay = Mathf.Clamp(Mathf.Abs(_vel.y) * 0.0005f, 0f, 0.30f);
             float scx = sq.x * (1f + ax - ay * 0.5f);
             float scy = sq.y * (1f + ay - ax * 0.5f);
             float rot;
             if (_spinT > 0f) { _spinT -= dt; _spinAngle += _spinSpeed * dt; rot = _spinAngle; }
-            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f, -12f, 12f) * _mirror; }
+            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f, -14f, 14f) * _mirror; }
+            rot += _extraTilt; _extraTilt = Mathf.MoveTowards(_extraTilt, 0f, 120f * dt);   // hit head-snap settles
             Vector2 vib = Vector2.zero;
             if (_vibT > 0f) { _vibT -= dt; float tt = Time.time; vib = new Vector2(Mathf.Sin(tt * 90f) * _vibMag, Mathf.Cos(tt * 78f) * _vibMag * 0.5f); }
             _artRt.localScale = new Vector3(_mirror * scx, scy, 1f);
             _artRt.localRotation = Quaternion.Euler(0f, 0f, rot);
             _artRt.anchoredPosition = vib;
+        }
+
+        // Attack motion: anticipation crouch → explosive lunge → follow-through overshoot → settle.
+        static float AttackCurve(float p)
+        {
+            if (p < 0.16f) return -0.25f * (p / 0.16f);
+            if (p < 0.42f) return Mathf.Lerp(-0.25f, 1f, (p - 0.16f) / 0.26f);
+            float q = (p - 0.42f) / 0.58f;
+            return Mathf.Lerp(1f, 0f, q) - Mathf.Sin(q * Mathf.PI) * 0.14f;
         }
 
         void Update()
@@ -243,11 +254,13 @@ namespace MTA.Battle
                 switch (_anim)
                 {
                     case Anim.Attack:
-                        animOff = _animDir * (Mathf.Sin(p * Mathf.PI) * _animDist);
+                        // anticipation crouch → explosive lunge → follow-through overshoot → settle
+                        animOff = _animDir * (AttackCurve(p) * _animDist);
                         if (_animUlt) animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
                         break;
                     case Anim.Hit:
                         animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * _animMag, 0f);
+                        _extraTilt = Mathf.Sin(p * 46f) * (1f - p) * 11f * _animMag;   // head-snap away from the blow
                         flashC = new Color(1f, 1f, 1f, (1f - p) * 0.85f);
                         animScale = 1f + (1f - p) * 0.06f * _animMag;
                         break;
