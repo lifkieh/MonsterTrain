@@ -22,10 +22,10 @@ namespace MTA.Battle
             b.Play(pos, kind, x => _bursts.Push(x));
         }
 
-        public void Projectile(Vector2 from, Vector2 to, Color color, Action onImpact)
+        public void Projectile(Vector2 from, Vector2 to, Color color, Action onImpact, Sprite sprite = null)
         {
             var p = _projs.Count > 0 ? _projs.Pop() : FxProjectile.Create(_parent);
-            p.Play(from, to, color, onImpact, x => _projs.Push(x));
+            p.Play(from, to, color, onImpact, x => _projs.Push(x), sprite);
         }
     }
 
@@ -47,13 +47,15 @@ namespace MTA.Battle
         {
             _rt.anchoredPosition = pos; _done = done; _age = 0; _active = true;
             _rt.localRotation = Quaternion.identity;
+            // Real generated shapes — never a bare rectangle. A slash reads as a crescent
+            // arc, an impact/ultimate as a radial burst, a crit as a star, a heal as a plus.
             switch (kind)
             {
-                case BurstKind.Slash: _col = new Color(1f, 1f, 1f, 0.9f); _rt.sizeDelta = new Vector2(170, 16); _rt.localRotation = Quaternion.Euler(0, 0, -35); _s0 = 0.3f; _s1 = 1.5f; _life = 0.22f; break;
-                case BurstKind.Impact: _col = new Color(1f, 0.9f, 0.6f, 0.9f); _rt.sizeDelta = new Vector2(120, 120); _s0 = 0.2f; _s1 = 1.7f; _life = 0.25f; break;
-                case BurstKind.Heal: _col = new Color(0.4f, 1f, 0.55f, 0.85f); _rt.sizeDelta = new Vector2(140, 140); _s0 = 0.2f; _s1 = 1.6f; _life = 0.4f; break;
-                case BurstKind.Crit: _col = new Color(1f, 0.9f, 0.2f, 0.95f); _rt.sizeDelta = new Vector2(170, 170); _s0 = 0.2f; _s1 = 2.1f; _life = 0.3f; break;
-                default: _col = new Color(1f, 0.55f, 0.12f, 0.95f); _rt.sizeDelta = new Vector2(240, 240); _s0 = 0.2f; _s1 = 2.7f; _life = 0.45f; break; // Ultimate
+                case BurstKind.Slash: _img.sprite = ProceduralArt.Crescent(); _col = new Color(1f, 1f, 1f, 0.92f); _rt.sizeDelta = new Vector2(150, 120); _rt.localRotation = Quaternion.Euler(0, 0, -30f + UnityEngine.Random.value * 60f); _s0 = 0.3f; _s1 = 1.4f; _life = 0.2f; break;
+                case BurstKind.Impact: _img.sprite = ProceduralArt.Glow(); _col = new Color(1f, 0.9f, 0.6f, 0.9f); _rt.sizeDelta = new Vector2(130, 130); _s0 = 0.25f; _s1 = 1.7f; _life = 0.25f; break;
+                case BurstKind.Heal: _img.sprite = ProceduralArt.Plus(); _col = new Color(0.5f, 1f, 0.6f, 0.9f); _rt.sizeDelta = new Vector2(90, 90); _s0 = 0.3f; _s1 = 1.3f; _life = 0.4f; break;
+                case BurstKind.Crit: _img.sprite = ProceduralArt.Star(); _col = new Color(1f, 0.9f, 0.2f, 0.95f); _rt.sizeDelta = new Vector2(150, 150); _rt.localRotation = Quaternion.Euler(0, 0, UnityEngine.Random.value * 72f); _s0 = 0.2f; _s1 = 2.0f; _life = 0.3f; break;
+                default: _img.sprite = ProceduralArt.Glow(); _col = new Color(1f, 0.6f, 0.16f, 0.95f); _rt.sizeDelta = new Vector2(240, 240); _s0 = 0.2f; _s1 = 2.6f; _life = 0.45f; break; // Ultimate
             }
             _img.color = _col; gameObject.SetActive(true); transform.SetAsLastSibling();
         }
@@ -78,15 +80,19 @@ namespace MTA.Battle
         {
             var go = new GameObject("Proj", typeof(RectTransform), typeof(Image), typeof(FxProjectile));
             var f = go.GetComponent<FxProjectile>();
-            f._rt = go.GetComponent<RectTransform>(); f._rt.SetParent(parent, false); f._rt.sizeDelta = new Vector2(34, 34);
-            f._img = go.GetComponent<Image>(); f._img.raycastTarget = false;
+            f._rt = go.GetComponent<RectTransform>(); f._rt.SetParent(parent, false); f._rt.sizeDelta = new Vector2(54, 54);
+            f._img = go.GetComponent<Image>(); f._img.raycastTarget = false; f._img.sprite = ProceduralArt.Droplet();
             go.SetActive(false); return f;
         }
 
-        public void Play(Vector2 from, Vector2 to, Color color, Action impact, Action<FxProjectile> done)
+        public void Play(Vector2 from, Vector2 to, Color color, Action impact, Action<FxProjectile> done, Sprite sprite = null)
         {
             _from = from; _to = to; _impact = impact; _done = done; _age = 0; _active = true;
+            _img.sprite = sprite != null ? sprite : ProceduralArt.Droplet();
             _img.color = color; _rt.anchoredPosition = from; _rt.localScale = Vector3.one;
+            // point the shape along its flight path (tip leads)
+            var d = to - from; float ang = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f;
+            _rt.localRotation = Quaternion.Euler(0, 0, ang);
             gameObject.SetActive(true); transform.SetAsLastSibling();
         }
 
@@ -95,7 +101,11 @@ namespace MTA.Battle
             if (!_active) return;
             _age += Time.deltaTime;
             float p = Mathf.Clamp01(_age / Dur);
-            _rt.anchoredPosition = Vector2.Lerp(_from, _to, p);
+            // slight ballistic arc + a spin so the projectile reads as energy, not a dot
+            Vector2 pos = Vector2.Lerp(_from, _to, p);
+            pos.y += Mathf.Sin(p * Mathf.PI) * 40f;
+            _rt.anchoredPosition = pos;
+            _rt.localScale = Vector3.one * (1f + Mathf.Sin(p * Mathf.PI) * 0.3f);
             if (p >= 1f) { _active = false; gameObject.SetActive(false); _impact?.Invoke(); _done?.Invoke(this); }
         }
     }

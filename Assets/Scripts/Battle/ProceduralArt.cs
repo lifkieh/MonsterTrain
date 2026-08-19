@@ -91,5 +91,63 @@ namespace MTA.Battle
 
         // Vertical gradient (opaque top → transparent bottom) — low-res, quantized to bands.
         public static Sprite VGradient() => Make("vgrad", 8, (x, y) => (y + 1f) * 0.5f);
+
+        // ---- Element-signature silhouettes (Final Combat Presentation pass) ----
+        // Each shape is recognisable from its outline alone, so the player reads the
+        // element without relying on colour. Point-filtered chunky pixels like the rest.
+
+        // FIRE: a flame tongue — rounded bulb at the base tapering to a wavy point.
+        public static Sprite Flame() => Make("flame", 32, (x, y) =>
+        {
+            float bx = x, by = y + 0.34f;
+            bool bulb = (bx * bx * 1.35f + by * by) <= 0.60f * 0.60f;          // base bulb
+            float u = Mathf.InverseLerp(-0.34f, 1f, y);                        // 0 base → 1 tip
+            float halfW = 0.58f * Mathf.Pow(Mathf.Clamp01(1f - u), 0.72f);
+            halfW *= 1f + 0.13f * Mathf.Sin(u * 9f);                           // flame wiggle
+            bool tongue = y >= -0.34f && Mathf.Abs(x) <= halfW;
+            return (bulb || tongue) ? 1f : 0f;
+        });
+
+        // NATURE: a leaf — pointed lens, gently skewed so it reads organic.
+        public static Sprite Leaf() => Make("leaf", 32, (x, y) =>
+        {
+            float halfW = 0.52f * (1f - y * y);                               // pointed at y = ±1
+            float xs = x - y * 0.13f;                                          // slight skew
+            return Mathf.Abs(xs) <= halfW ? 1f : 0f;
+        });
+
+        // LIGHTNING: a jagged vertical bolt (triangle-wave centreline).
+        public static Sprite Bolt() => Make("bolt", 32, (x, y) =>
+        {
+            float zig = Mathf.PingPong((y + 1f) * 2.2f, 1f) * 0.9f - 0.45f;    // zigzag
+            return Mathf.Abs(x - zig) <= 0.17f ? 1f : 0f;
+        });
+
+        // HEAL: a plus / cross — unmistakable "restore" glyph.
+        public static Sprite Plus() => Make("plus", 32, (x, y) =>
+        {
+            bool v = Mathf.Abs(x) <= 0.27f && Mathf.Abs(y) <= 0.88f;
+            bool h = Mathf.Abs(y) <= 0.27f && Mathf.Abs(x) <= 0.88f;
+            return (v || h) ? 1f : 0f;
+        });
+
+        // WATER / slash: a crescent (big disc minus an offset disc) — reads as a
+        // water wave-slash or a claw arc depending on rotation.
+        public static Sprite Crescent() => Make("crescent", 40, (x, y) =>
+        {
+            bool outer = (x * x + y * y) <= 0.95f * 0.95f;
+            float ix = x - 0.42f, iy = y + 0.06f;
+            bool cut = (ix * ix + iy * iy) <= 0.82f * 0.82f;
+            return (outer && !cut) ? 1f : 0f;
+        });
+
+        // WATER: a droplet — round belly, pointed top (teardrop).
+        public static Sprite Droplet() => Make("droplet", 32, (x, y) =>
+        {
+            bool belly = (x * x * 1.2f + (y + 0.28f) * (y + 0.28f)) <= 0.58f * 0.58f;
+            float u = Mathf.InverseLerp(-0.28f, 1f, y);
+            bool tip = y >= -0.28f && Mathf.Abs(x) <= 0.52f * Mathf.Pow(Mathf.Clamp01(1f - u), 1.1f);
+            return (belly || tip) ? 1f : 0f;
+        });
     }
 }

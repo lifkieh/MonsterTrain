@@ -73,6 +73,14 @@ namespace MTA.Battle
             _floor = Panel(_root, "Floor", floorCol, new Vector2(980, 10), new Vector2(0, -430));
             _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.6f, floorCol.g * 1.6f, floorCol.b * 1.6f);
 
+            // Battle ground pad — a soft, wide shelf beneath the fighters so they read as
+            // PLANTED on a surface (not floating) and the lower third of the frame isn't a
+            // dead void. Sits above the far ground band, below the fighters + their shadows.
+            var pad = Panel(_root, "GroundPad", new Color(floorCol.r * 1.15f, floorCol.g * 1.15f, floorCol.b * 1.15f, 0.9f), new Vector2(1280, 470), new Vector2(0, -230));
+            pad.GetComponent<Image>().sprite = ProceduralArt.Glow();
+            var rim = Panel(_root, "GroundRim", new Color(floorCol.r * 2.0f, floorCol.g * 2.0f, floorCol.b * 2.0f, 0.55f), new Vector2(1060, 120), new Vector2(0, -120));
+            rim.GetComponent<Image>().sprite = ProceduralArt.Glow();
+
             // Foreground silhouette layer — darkest, strongest parallax (depth).
             _fore = Layer("Fore");
             var fg = new Color(groundCol.r * 0.4f, groundCol.g * 0.4f, groundCol.b * 0.4f, 0.96f);

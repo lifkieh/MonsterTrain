@@ -71,7 +71,7 @@ namespace MTA.Battle
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
-        RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena; VfxPool _vfx;
+        RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena; VfxPool _vfx; ElementVfx _elem;
         readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
@@ -94,18 +94,31 @@ namespace MTA.Battle
             return string.Join(" ", parts);
         }
 
-        // Team-brawl formation: 3-slot echelon per side, X stagger + Y depth rows so
-        // bodies never stack. Player team on the left, enemy on the right; one shared
-        // ground band. Front slot (pick order 0) closest to centre.
-        static Vector2 Formation(int team, int slot)
+        readonly int[] _teamCount = new int[2];   // live roster size per team (drives the formation)
+
+        // Team-brawl formation: layout adapts to team SIZE so 1v1 / 2v2 / 3v3 each read
+        // cleanly — no crowding, no stacking, no both-teams-in-one-corner. Player team on
+        // the left, enemy on the right; front slot (pick order 0) closest to centre. Wider
+        // X spread + deeper Y stagger than before so the arena is used, not just its middle.
+        Vector2 Formation(int team, int slot)
         {
             float side = team == 0 ? -1f : 1f;
-            switch (slot)
+            int size = Mathf.Clamp(_teamCount[team], 1, 3);
+            switch (size)
             {
-                case 0:  return new Vector2(side * 250f, -30f);    // front
-                case 1:  return new Vector2(side * 405f,  95f);    // back-high row
-                case 2:  return new Vector2(side * 360f, -175f);   // back-low row
-                default: return new Vector2(side * (470f + (slot - 3) * 70f), -30f);
+                case 1:                                                    // 1v1 — cinematic duel spacing
+                    return new Vector2(side * 250f, -40f);
+                case 2:                                                    // 2v2 — a clean front/back pair
+                    return slot == 0 ? new Vector2(side * 245f, -75f)
+                                     : new Vector2(side * 445f, 120f);
+                default:                                                   // 3v3 — spread triangle (front / back-high / mid-low)
+                    switch (slot)
+                    {
+                        case 0:  return new Vector2(side * 235f, -70f);
+                        case 1:  return new Vector2(side * 455f, 140f);
+                        case 2:  return new Vector2(side * 400f, -235f);
+                        default: return new Vector2(side * (515f + (slot - 3) * 72f), -60f);
+                    }
             }
         }
 
@@ -155,6 +168,7 @@ namespace MTA.Battle
             _texts = new FloatingTextPool(_stage, _font);
             _fx = new BattleFx(_stage);
             _vfx = new VfxPool(_stage, 24);   // ×6 units — pre-warmed real CC0 impact VFX
+            _elem = new ElementVfx(_stage);   // procedural element-signature VFX (fire/water/nature/lightning/heal)
 
             // Afterimage ghost pool — pre-warmed, sized for six concurrent units (behind fighters).
             _ghost = new Image[GHOST_POOL]; _ghostA = new float[GHOST_POOL]; _ghostCur = 0;
@@ -187,6 +201,9 @@ namespace MTA.Battle
             silGo.SetActive(false);
 
             _views.Clear(); _styleByKey.Clear(); _speciesByKey.Clear();
+
+            _teamCount[0] = _teamCount[1] = 0;
+            foreach (var u in _pb.Units) if (u.team >= 0 && u.team < 2) _teamCount[u.team]++;
 
             var size = new Vector2(256, 386);
             foreach (var u in _pb.Units)
@@ -557,9 +574,8 @@ namespace MTA.Battle
                     }
                     if (av != null && (e.kind == ReplayEventKind.Skill || ult))
                     {
-                        string ael = elementNames != null && elementNames.TryGetValue(actorSp, out var ae) ? ae : "";
-                        string efx = ael == "Fire" ? "fire" : ael == "Water" ? "electric" : "";
-                        if (efx != "") _vfx.Play(efx, av.BasePos + new Vector2(0, 10), ult ? 260f : 190f, Color.white);
+                        // Element-signature cast aura at the caster — recognisable by shape.
+                        _elem.Burst(Elem(actorSp), av.BasePos + new Vector2(0, 10), ult ? 260f : 190f, ult ? ElemFx.Ultimate : ElemFx.Cast);
                     }
                     if (e.kind == ReplayEventKind.Skill) AudioManager.Play(Sfx.Skill);
                     else if (ult) AudioManager.Play(Sfx.Ultimate);
@@ -594,8 +610,11 @@ namespace MTA.Battle
                     {
                         Vector2 from = PosOf(e.actorTeam, e.actorSlot), to = PosOf(tt, ts);
                         av?.PlayAttack(dir, 26f, false);
-                        _fx.Projectile(from, to, ProjColor(st),
-                            () => StartCoroutine(RangedHit(e.actorTeam, e.actorSlot, tt, ts, b, actorSp, ult)));
+                        string pel = Elem(actorSp);
+                        Color pcol = pel != "" ? ElemColor(pel) : ProjColor(st);
+                        _fx.Projectile(from, to, pcol,
+                            () => StartCoroutine(RangedHit(e.actorTeam, e.actorSlot, tt, ts, b, actorSp, ult)),
+                            ElemSprite(pel));
                     }
                     else if (big && !_spotlightBusy)
                     {
@@ -619,7 +638,7 @@ namespace MTA.Battle
                     {
                         hv.PlayHeal();
                         _texts.Spawn(hv.BasePos + Jitter(), "+" + e.amount, CHeal, 30);
-                        _fx.Burst(hv.BasePos, BurstKind.Heal);
+                        _elem.Burst("Heal", hv.BasePos, 160f, ElemFx.Heal);   // rising plus-crosses + aura ring
                         AudioManager.Play(Sfx.Heal);
                     }
                     break;
@@ -718,6 +737,7 @@ namespace MTA.Battle
                 // 3) LAUNCHER — target spins up, attacker jumps after (heavy → capped freeze)
                 AudioManager.Impact(false, true, _hudRng.Range(0.9f, 1.1f));
                 _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
+                _elem.Burst(Elem(actorSp), T.BasePos, 220f, ElemFx.Impact);   // element flourish on the launcher
                 _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
                 _arena?.React(ArenaReact.Crack, Ground(T.BasePos)); _arena?.React(ArenaReact.Debris, Ground(T.BasePos));
                 T.Spin(720f, 0.55f); T.Squash(1.25f, 0.78f, 0.09f); T.Vibrate(3f, 0.09f); HitStop(0.09f);
@@ -744,6 +764,7 @@ namespace MTA.Battle
                 T.Spin(900f, 0.16f);
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
+                _elem.Burst(Elem(actorSp), T.BasePos, ult ? 320f : 230f, ult ? ElemFx.Ultimate : ElemFx.Impact);   // element signature on the slam
                 _arena?.React(ArenaReact.Shockwave, Ground(T.BasePos));
                 DamageNumber(T.BasePos, b.amount, true, ult);
                 if (b.crit) _texts.Spawn(T.BasePos + new Vector2(0, -70), SpeciesIdentity.CritWord(actorSp), CCrit, 34);
@@ -803,6 +824,7 @@ namespace MTA.Battle
                         DamageNumber(T.BasePos, b.amount, b.crit, false);
                         T.Knock(dir, b.knockback);
                         _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
+                        _elem.Burst(Elem(actorSp), T.BasePos, b.crit ? 175f : 135f, ElemFx.Impact);
                         if (b.crit) { T.Vibrate(2.5f, 0.06f); T.Launch(50f); MicroImpact(T); CamPush(dir, 26f); Shake(9f); ZoomPunch(0.03f); StartCoroutine(Shockwave(T.BasePos, CCrit)); }
                     }
                     yield return new WaitForSecondsRealtime(0.05f / sp);
@@ -828,6 +850,7 @@ namespace MTA.Battle
                 _vfx.Play(b.crit ? "hit_impact" : "hit_small", T.BasePos, 150f, Color.white);
                 T.Knock(dir, b.knockback * 0.6f); T.Squash(1.2f, 0.8f, 0.08f); if (b.crit) T.Vibrate(2.5f, 0.06f);
                 _arena?.React(b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(T.BasePos));
+                if (b.crit) _elem.Burst(Elem(_speciesByKey.TryGetValue(Key(at, as_), out var lsp) ? lsp : ""), T.BasePos, 165f, ElemFx.Impact);
                 DamageNumber(T.BasePos, b.amount, b.crit, false);
                 if (b.crit) { T.Launch(40f); MicroImpact(T); CamPush(dir, 20f); }
             }
@@ -854,6 +877,7 @@ namespace MTA.Battle
                 if (last)
                 {
                     DamageNumber(tp, b.amount, b.crit, ult);
+                    _elem.Burst(Elem(actorSp), tp, big ? 300f : 175f, big ? ElemFx.Ultimate : ElemFx.Impact);   // element splash on the landing shot
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); _arena?.React(big ? ArenaReact.Shockwave : b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(tp)); }
                     Vector2 kdir = new Vector2(at == 0 ? 1f : -1f, 0f);
                     if (big) { T?.Vibrate(3f, 0.15f); T?.Launch(50f); CamPush(kdir, 48f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
@@ -1172,6 +1196,33 @@ namespace MTA.Battle
         }
 
         static Color ProjColor(AttackStyle s) => s == AttackStyle.MageCast ? new Color(0.6f, 0.5f, 1f) : new Color(1f, 0.9f, 0.4f);
+
+        // Element of a species (for element-signature VFX routing), "" when unknown.
+        string Elem(string sp) => (sp != null && elementNames != null && elementNames.TryGetValue(sp, out var e)) ? e : "";
+        // Element-shaped projectile head, so ranged shots read as their element.
+        static Sprite ElemSprite(string element)
+        {
+            switch (element)
+            {
+                case "Fire": return ProceduralArt.Flame();
+                case "Water": return ProceduralArt.Droplet();
+                case "Nature": return ProceduralArt.Leaf();
+                case "Lightning": return ProceduralArt.Bolt();
+                default: return ProceduralArt.Glow();
+            }
+        }
+        // Element tint for projectiles / trails.
+        static Color ElemColor(string element)
+        {
+            switch (element)
+            {
+                case "Fire": return new Color(1f, 0.55f, 0.18f);
+                case "Water": return new Color(0.5f, 0.8f, 1f);
+                case "Nature": return new Color(0.5f, 0.9f, 0.4f);
+                case "Lightning": return new Color(1f, 1f, 0.6f);
+                default: return new Color(1f, 0.9f, 0.5f);
+            }
+        }
         static Vector2 Jitter() => new Vector2(UnityEngine.Random.Range(-24f, 24f), 40f);
         static Vector2 ComboJit(int i) => new Vector2(UnityEngine.Random.Range(-40f, 40f), UnityEngine.Random.Range(-30f, 40f));
 
@@ -1308,6 +1359,7 @@ namespace MTA.Battle
 
             _arena?.SetParallax(camOffset);
             _arena?.Tick(Time.deltaTime);
+            _elem?.Tick(Time.deltaTime);
 
             if (_screenFlash != null)
             {

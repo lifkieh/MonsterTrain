@@ -32,6 +32,7 @@ namespace MTA.Battle
         float _vibT, _vibMag;                               // hit-stop vibrate
         float _impSilT;                                     // impact-frame white silhouette
         float _extraTilt;                                   // hit head-snap rotation (decays)
+        float _roamFactor;                                  // idle-wander blend (0 busy → 1 at rest)
 
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
@@ -50,9 +51,9 @@ namespace MTA.Battle
             var sgo = new GameObject("Shadow", typeof(RectTransform), typeof(Image));
             _shadowRt = sgo.GetComponent<RectTransform>(); _shadowRt.SetParent(parent, false);
             _shadowRt.anchorMin = _shadowRt.anchorMax = new Vector2(0.5f, 0.5f);
-            _shadowRt.sizeDelta = new Vector2(150, 42); _shadowRt.anchoredPosition = anchoredPos + new Vector2(0, -FOOT);
+            _shadowRt.sizeDelta = new Vector2(178, 52); _shadowRt.anchoredPosition = anchoredPos + new Vector2(0, -FOOT);
             _shadow = sgo.GetComponent<Image>(); _shadow.sprite = ProceduralArt.Glow();
-            _shadow.color = new Color(0f, 0f, 0f, 0.45f); _shadow.raycastTarget = false;
+            _shadow.color = new Color(0f, 0f, 0f, 0.52f); _shadow.raycastTarget = false;
 
             // Fighter root (the moving transform).
             var go = new GameObject("Unit_" + speciesId, typeof(RectTransform));
@@ -272,7 +273,18 @@ namespace MTA.Battle
                 if (p >= 1f) _anim = Anim.None;
             }
 
-            Vector2 apos = _basePos + idle + animOff + _impulse + combatOffset;
+            // Idle roam (Final Combat Presentation pass): when a fighter is NOT mid-attack,
+            // knocked, or choreographed, it slowly wanders around its home — sidestep, drift,
+            // gentle circling — so the arena feels alive and units never plant on one spot.
+            // Blended out the instant combat claims the unit; never touches BasePos, so the
+            // choreography/VFX anchoring is unaffected. Presentation only.
+            bool atRest = _anim == Anim.None && !_victory && _impulse.sqrMagnitude < 4f && combatOffset.sqrMagnitude < 4f;
+            _roamFactor = Mathf.MoveTowards(_roamFactor, atRest ? 1f : 0f, dt * (atRest ? 0.7f : 4f));
+            float rph = _basePos.x * 0.017f + _basePos.y * 0.011f;
+            Vector2 roam = new Vector2(Mathf.Sin(t * 0.5f + rph) * 40f + Mathf.Sin(t * 0.21f + rph * 2f) * 18f,
+                                       Mathf.Sin(t * 0.37f + rph * 1.7f) * 20f) * _roamFactor;
+
+            Vector2 apos = _basePos + idle + animOff + _impulse + combatOffset + roam;
             _vel = (apos - _lastPos) / Mathf.Max(dt, 1e-4f); _lastPos = apos;   // for lean & auto-stretch
             _rt.anchoredPosition = apos;
             _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
@@ -293,8 +305,8 @@ namespace MTA.Battle
             float k = Mathf.Clamp01(height / MAX_JUMP);
             float s = Mathf.Lerp(1f, 0.55f, k) * scale;
             _shadowRt.anchoredPosition = new Vector2(rootPos.x, _basePos.y - FOOT);
-            _shadowRt.localScale = new Vector3(s, s, 1f);
-            _shadow.color = new Color(0f, 0f, 0f, Mathf.Lerp(0.45f, 0.15f, k) * _reserveDim * aliveAlpha);
+            _shadowRt.localScale = new Vector3(s, s * 0.9f, 1f);
+            _shadow.color = new Color(0f, 0f, 0f, Mathf.Lerp(0.52f, 0.14f, k) * _reserveDim * aliveAlpha);
         }
 
         static Text MakeText(RectTransform parent, Font font, string s, int size, Vector2 pos, TextAnchor anchor)
