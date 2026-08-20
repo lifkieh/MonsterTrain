@@ -94,8 +94,8 @@ namespace MTA.Battle
             Panel(_root, "GroundMid",  Lift(groundCol, 1.12f), new Vector2(1340, 260), new Vector2(0, -235));
             Panel(_root, "GroundNear", Lift(groundCol, 1.42f), new Vector2(1340, 250), new Vector2(0, -55));
             _floor = Panel(_root, "Floor", floorCol, new Vector2(980, 8), new Vector2(0, -430));
-            _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.6f, floorCol.g * 1.6f, floorCol.b * 1.6f);
-            Panel(_root, "GroundLip", Lift(floorCol, 2.1f), new Vector2(1360, 10), new Vector2(0, 62));   // bright near standing edge
+            _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.25f, floorCol.g * 1.25f, floorCol.b * 1.25f);   // softer edge line (V4: was 1.6, read as a harsh neon line)
+            Panel(_root, "GroundLip", Lift(floorCol, 1.5f), new Vector2(1360, 10), new Vector2(0, 62));   // near standing edge (softened)
 
             BuildElementGround(element, groundCol, floorCol, partCol);
 
@@ -377,8 +377,7 @@ namespace MTA.Battle
                     break;
                 case "Water":
                     // Sun + bright horizon haze + deeper sea bands + glinting reflection (V3 parity).
-                    var sun = Panel(_biome, "Sun", new Color(1f, 0.95f, 0.78f, 0.6f), new Vector2(330, 330), new Vector2(-250, 470));   // high in the sky, clear of the fighters
-                    sun.GetComponent<Image>().sprite = ProceduralArt.Glow();
+                    // (The old proc "sun" disc read as a grey placeholder blob near the HUD — removed, V4.)
                     Panel(_biome, "Haze", new Color(0.55f, 0.82f, 1f, 0.4f), new Vector2(1500, 150), new Vector2(0, -150));
                     Panel(_biome, "Sea", new Color(0.16f, 0.42f, 0.64f, 0.95f), new Vector2(1500, 250), new Vector2(0, -300));
                     for (int i = 0; i < 5; i++)
@@ -427,14 +426,14 @@ namespace MTA.Battle
                 case "Water":
                     var sheen = Panel(_root, "Sheen", new Color(0.5f, 0.8f, 1f, 0.14f), new Vector2(1220, 300), new Vector2(0, -130));
                     sheen.GetComponent<Image>().sprite = ProceduralArt.Glow();
-                    for (int i = 0; i < 5; i++)
+                    for (int i = 0; i < 3; i++)   // fewer, fainter ripples (V4: was 5 @0.5 — read as floor noise)
                     {
-                        var ring = Panel(_root, "Ripple", new Color(0.72f, 0.9f, 1f, 0.5f), new Vector2(130, 130), new Vector2(RD() * 1000 - 500, rowY[seed.Next(3)]));
+                        var ring = Panel(_root, "Ripple", new Color(0.72f, 0.9f, 1f, 0.32f), new Vector2(130, 130), new Vector2(RD() * 1000 - 500, rowY[seed.Next(3)]));
                         var img = ring.GetComponent<Image>(); img.sprite = ProceduralArt.Ring(); feats.Add((ring, img, 1, img.color, RD()));
                     }
                     for (int r = 0; r < 3; r++)
                         for (int k = 0; k < 4; k++)
-                            Panel(_root, "Caustic", new Color(0.8f, 0.95f, 1f, 0.22f), new Vector2(90 * rs[r], 9 * rs[r]), new Vector2(-450 + k * 300 + RD() * 40, rowY[r] + 20));
+                            Panel(_root, "Caustic", new Color(0.8f, 0.95f, 1f, 0.13f), new Vector2(90 * rs[r], 9 * rs[r]), new Vector2(-450 + k * 300 + RD() * 40, rowY[r] + 20));
                     break;
                 case "Nature":
                     for (int r = 0; r < 3; r++)

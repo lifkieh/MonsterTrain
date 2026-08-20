@@ -16,7 +16,7 @@ namespace MTA.Battle
         const float MAX_JUMP = 300f;   // launch height at which the shadow is smallest
 
         Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
-        RectTransform _rt, _artRt, _shadowRt, _barsRt; Text _name;
+        RectTransform _rt, _artRt, _shadowRt, _barsRt, _hpBgRt, _nameRt, _elemDotRt; Text _name;
         Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         float _ghostHold, _lastTarget = 1f;   // HP ghost bar: delay before the lost-HP chunk drains
@@ -115,7 +115,7 @@ namespace MTA.Battle
             var bg = new GameObject("HpBg", typeof(RectTransform), typeof(Image));
             var bgrt = bg.GetComponent<RectTransform>(); bgrt.SetParent(_barsRt, false);
             bgrt.anchorMin = bgrt.anchorMax = new Vector2(0.5f, 0.5f);
-            bgrt.sizeDelta = new Vector2(148, 14); bgrt.anchoredPosition = new Vector2(0, ART * 0.5f + 22f);
+            bgrt.sizeDelta = new Vector2(148, 14); bgrt.anchoredPosition = new Vector2(0, ART * 0.5f + 22f); _hpBgRt = bgrt;
             bg.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f); bg.GetComponent<Image>().raycastTarget = false;
             _hpDelayed = MakeFill(bgrt, new Color(0.95f, 0.3f, 0.28f, 0.92f));   // red "recently lost HP" ghost
             _hpFill = MakeFill(bgrt, new Color(0.3f, 0.9f, 0.3f, 1f));
@@ -124,7 +124,7 @@ namespace MTA.Battle
             var np = new GameObject("Name", typeof(RectTransform));
             var nprt = np.GetComponent<RectTransform>(); nprt.SetParent(_barsRt, false);
             nprt.anchorMin = nprt.anchorMax = new Vector2(0.5f, 0.5f);
-            nprt.sizeDelta = new Vector2(196, 26); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 44f);
+            nprt.sizeDelta = new Vector2(196, 26); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 44f); _nameRt = nprt;
             _name = MakeText(nprt, font, displayName, 17, Vector2.zero, TextAnchor.MiddleCenter);
             _name.fontStyle = FontStyle.Bold;
 
@@ -164,8 +164,20 @@ namespace MTA.Battle
             var go = new GameObject("Elem", typeof(RectTransform), typeof(Image));
             var rt = go.GetComponent<RectTransform>(); rt.SetParent(_barsRt != null ? _barsRt : _rt, false);
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(20, 20); rt.anchoredPosition = new Vector2(-86, ART * 0.5f + 22f);
+            rt.sizeDelta = new Vector2(20, 20); rt.anchoredPosition = new Vector2(-86, ART * 0.5f + 22f); _elemDotRt = rt;
+            if (_barRaise != 0f) rt.anchoredPosition += new Vector2(0, _barRaise);
             var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Disc(); img.color = c; img.raycastTarget = false;
+        }
+
+        // Raise this fighter's HP bar + name by a per-slot amount so stacked teammates' HUD does not
+        // collide into one unreadable soup in a brawl scrum (V4 label de-collision). Presentation only.
+        float _barRaise;
+        public void SetBarRaise(float dy)
+        {
+            _barRaise = dy;
+            if (_hpBgRt != null) _hpBgRt.anchoredPosition = new Vector2(_hpBgRt.anchoredPosition.x, ART * 0.5f + 22f + dy);
+            if (_nameRt != null) _nameRt.anchoredPosition = new Vector2(_nameRt.anchoredPosition.x, ART * 0.5f + 44f + dy);
+            if (_elemDotRt != null) _elemDotRt.anchoredPosition = new Vector2(_elemDotRt.anchoredPosition.x, ART * 0.5f + 22f + dy);
         }
         public void SetBasePos(Vector2 p) { _basePos = p; }
         public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse

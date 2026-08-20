@@ -188,6 +188,15 @@ namespace MTA.Battle
                 gg.SetActive(false); _ghost[i] = gi; _ghostA[i] = 0f;
             }
 
+            // Screen vignette (V4): clear centre → soft dark edges for photographic depth. Sits above
+            // the battlefield but below the flash/impact overlays + HUD, so it never dims the drama or
+            // the readouts — it only frames the eye toward the fighters.
+            var vgGo = new GameObject("Vignette", typeof(RectTransform), typeof(Image));
+            var vgrt = vgGo.GetComponent<RectTransform>(); vgrt.SetParent(_root, false);
+            vgrt.anchorMin = Vector2.zero; vgrt.anchorMax = Vector2.one; vgrt.offsetMin = vgrt.offsetMax = Vector2.zero;
+            var vgImg = vgGo.GetComponent<Image>(); vgImg.sprite = ProceduralArt.Vignette();
+            vgImg.color = new Color(0f, 0f, 0f, 0.5f); vgImg.raycastTarget = false;
+
             // Full-screen crit/ultimate flash overlay (over the fighters).
             var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(Image));
             var frt = flashGo.GetComponent<RectTransform>(); frt.SetParent(_root, false);
@@ -237,6 +246,7 @@ namespace MTA.Battle
                 v.SetWeight(RoleWeight(role));          // heft by role (presentation only)
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
                 if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
+                v.SetBarRaise((u.slot % 3) * 32f);   // stagger HP-bar height per slot so stacked teammates don't collide into label soup
                 int k = Key(u.team, u.slot);
                 _views[k] = v;
                 _speciesByKey[k] = u.speciesId;
@@ -1058,13 +1068,13 @@ namespace MTA.Battle
         static Vector2 BenchAnchor(int team, int slot)
         {
             float side = team == 0 ? -1f : 1f;
-            return new Vector2(side * 430f, 150f - slot * 150f);   // pulled in so bigger reserves stay on-screen
+            return new Vector2(side * 392f, 150f - slot * 150f);   // pulled further in so reserves never clip the screen edge under zoom (V4)
         }
 
         static Vector2 ChargeAnchor(int team, int slot)
         {
             float side = team == 0 ? -1f : 1f;
-            return new Vector2(side * (95f + slot * 10f), (slot - 1) * 92f);   // collide near centre, staggered
+            return new Vector2(side * (150f + slot * 55f), (slot - 1) * 150f);   // meet near centre but spread by slot so the opening clash isn't a single pile (V4)
         }
 
         Vector2 EngageAnchor(int team, int slot, int k)

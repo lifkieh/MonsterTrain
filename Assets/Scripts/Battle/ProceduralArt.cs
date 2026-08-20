@@ -92,6 +92,30 @@ namespace MTA.Battle
         // Vertical gradient (opaque top → transparent bottom) — low-res, quantized to bands.
         public static Sprite VGradient() => Make("vgrad", 8, (x, y) => (y + 1f) * 0.5f);
 
+        // Screen vignette (V4): clear centre → soft dark edges. SMOOTH (bilinear, no 3-step
+        // quantization) so a full-screen stretch reads as a gradient, not bands. Black; tint
+        // alpha via Image.color. Adds photographic depth over the whole battle frame.
+        public static Sprite Vignette()
+        {
+            const string key = "vignette";
+            if (_cache.TryGetValue(key, out var s) && s != null) return s;
+            int size = 64; float c = (size - 1) * 0.5f;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float nx = (x - c) / c, ny = (y - c) / c;
+                    float r = Mathf.Sqrt(nx * nx + ny * ny);
+                    float a = Mathf.Clamp01(Mathf.SmoothStep(0f, 1f, (r - 0.58f) / 0.72f));
+                    px[y * size + x] = new Color32(0, 0, 0, (byte)(a * 255f));
+                }
+            tex.SetPixels32(px); tex.Apply(false, false);
+            s = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            _cache[key] = s;
+            return s;
+        }
+
         // ---- Element-signature silhouettes (Final Combat Presentation pass) ----
         // Each shape is recognisable from its outline alone, so the player reads the
         // element without relying on colour. Point-filtered chunky pixels like the rest.
