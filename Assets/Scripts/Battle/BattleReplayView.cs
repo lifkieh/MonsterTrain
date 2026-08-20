@@ -73,6 +73,7 @@ namespace MTA.Battle
         RectTransform _vs, _vsLeft, _vsRight; Text _vsMid; Image _vsFlash; CanvasGroup _vsGroup; float _vsT; const float VS_DUR = 2.6f; bool _vsFlashed;
         RectTransform _superRoot; Image _superDim, _superSil, _superTint, _superCutin; Text _superBanner;
         Image _finDark; float _finDarkCur, _finDarkTarget;
+        RectTransform _victoryRoot; Text _victoryText; Image[] _victoryStars; string _winBanner = "VICTORY!"; int _winStars = 1;   // victory hero screen
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
@@ -151,6 +152,8 @@ namespace MTA.Battle
             double sim = Math.Max(1.0, result.duration);
             double target = Math.Min(60.0, Math.Max(15.0, sim * 1.5));
             var d = BattleDrama.Compute(result);
+            _winBanner = string.IsNullOrEmpty(d.bannerTitle) ? "VICTORY!" : d.bannerTitle;
+            _winStars = d.tier == WinTier.DominantWin ? 3 : d.tier == WinTier.AdvantageWin ? 2 : 1;
             bool close = d.winnerAlive <= 1 || d.leadChanges >= 2;
             bool stomp = d.winnerAlive >= 3 && d.leadChanges == 0;
             if (close) target = Math.Min(60.0, target * 1.25);
@@ -299,7 +302,45 @@ namespace MTA.Battle
         {
             _finDark = FullImage(_root, new Color(0, 0, 0, 0));   // finisher darken (over arena, under HUD)
             BuildSuper();
+            BuildVictory();
             BuildVS();
+        }
+
+        // Victory hero screen: a big win-flavour banner + win-tier stars, shown when the fight ends.
+        void BuildVictory()
+        {
+            if (_victoryRoot != null) Destroy(_victoryRoot.gameObject);   // don't let a prior scene's banner linger (showcase)
+            var go = new GameObject("VictoryRoot", typeof(RectTransform)); _victoryRoot = go.GetComponent<RectTransform>();
+            _victoryRoot.SetParent(_root, false); _victoryRoot.anchorMin = Vector2.zero; _victoryRoot.anchorMax = Vector2.one; _victoryRoot.offsetMin = _victoryRoot.offsetMax = Vector2.zero;
+            _victoryText = HudText(_victoryRoot, "", 74, new Vector2(0, 250), new Vector2(1060, 160), FontStyle.BoldAndItalic);
+            _victoryText.color = new Color(1, 1, 1, 0);
+            _victoryStars = new Image[3];
+            for (int i = 0; i < 3; i++)
+            {
+                var s = new GameObject("VStar", typeof(RectTransform), typeof(Image));
+                var rt = s.GetComponent<RectTransform>(); rt.SetParent(_victoryRoot, false); rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(92, 92); rt.anchoredPosition = new Vector2(-112 + i * 112, 128);
+                var img = s.GetComponent<Image>(); img.sprite = ProceduralArt.Star(); img.raycastTarget = false; img.color = new Color(1, 1, 1, 0);
+                _victoryStars[i] = img;
+            }
+            _victoryRoot.gameObject.SetActive(false);
+        }
+
+        IEnumerator ShowVictory()
+        {
+            if (_victoryRoot == null) yield break;
+            _victoryRoot.SetAsLastSibling(); _victoryRoot.gameObject.SetActive(true);
+            _victoryText.text = _winBanner.ToUpper();
+            float t = 0f;
+            while (t < 0.4f) { t += Time.deltaTime; float p = Mathf.Clamp01(t / 0.4f); _victoryText.color = new Color(1f, 0.92f, 0.42f, p); _victoryText.rectTransform.localScale = Vector3.one * Mathf.Lerp(1.6f, 1f, p); yield return null; }
+            for (int i = 0; i < 3; i++)
+            {
+                bool lit = i < _winStars;
+                _victoryStars[i].color = lit ? new Color(1f, 0.85f, 0.3f, 1f) : new Color(0.35f, 0.35f, 0.42f, 0.85f);
+                float st = 0f;
+                while (st < 0.16f) { st += Time.deltaTime; _victoryStars[i].rectTransform.localScale = Vector3.one * Mathf.Lerp(1.7f, 1f, st / 0.16f); yield return null; }
+                if (lit) AudioManager.Play(Sfx.Crit);
+            }
         }
 
         Image FullImage(RectTransform parent, Color c)
@@ -458,7 +499,7 @@ namespace MTA.Battle
 
         IEnumerator VictoryHold()
         {
-            yield return new WaitForSecondsRealtime(1.8f);
+            yield return new WaitForSecondsRealtime(2.7f);   // hold the victory hero screen
             OnFinished?.Invoke(_pb.WinnerTeam);
         }
 
@@ -597,6 +638,7 @@ namespace MTA.Battle
                             wIdx++;
                         }
                     AudioManager.Play(Sfx.Victory); AudioManager.Announce(Sfx.VoVictory);
+                    StartCoroutine(ShowVictory());   // victory hero banner + win-tier stars
                     StartCoroutine(VictoryHold());   // hold the celebration, then show the result screen
                 }
             }

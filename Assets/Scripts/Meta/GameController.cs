@@ -72,12 +72,12 @@ namespace MTA.Meta
         // Deterministic showcase battle for the visual-review harness: fixed teams + seed +
         // mode, no random enemy, no match-count advance. Presentation tooling only; does not
         // touch balance/save/progression.
-        public BattleResult StartShowcase(IList<string> playerIds, IList<string> enemyIds, bool tag, int seed, IDictionary<string, int> levels)
+        public BattleResult StartShowcase(IList<string> playerIds, IList<string> enemyIds, bool tag, int seed, IDictionary<string, int> levels, int enemyLevel = 12)
         {
             Session.ClearPlayer();
             foreach (var id in playerIds) Session.playerTeam.Add(id);
             Session.enemyTeam = new List<string>(enemyIds);
-            Session.enemyLevel = 12;                         // fuller HP so ultimates + KO occur on screen
+            Session.enemyLevel = enemyLevel;                 // fuller HP so ultimates + KO occur on screen (low = fast stomp for the victory capture)
             Session.tagMode = tag;
             Session.playerLevels = levels == null ? null : new Dictionary<string, int>(levels);
             Session.careerStageIndex = -1;

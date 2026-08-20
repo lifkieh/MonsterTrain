@@ -80,6 +80,7 @@ namespace MTA.Battle
                 _dBody = MakeDeform("Body", sprite, Color.white, 1f);
                 _dFlash = MakeDeform("Flash", sprite, new Color(1, 1, 1, 0), 1f); _flash = _dFlash;
                 _dBody.phase = _dOutline.phase = _dFlash.phase = anchoredPos.x * 0.05f + anchoredPos.y * 0.03f;
+                _dBody.shadeLo = 0.66f; _dBody.lightTint = LightTint(element);   // top-light form + biome tint (only the body)
             }
             else
             {
@@ -118,6 +119,19 @@ namespace MTA.Battle
 
             _lastPos = anchoredPos;
             _spawnT = 0f;   // spawn-pop
+        }
+
+        // Biome light colour the body is lit by, so fighters sit in the scene's lighting.
+        static Color LightTint(string element)
+        {
+            switch (element)
+            {
+                case "Fire": return new Color(1f, 0.93f, 0.84f);
+                case "Water": return new Color(0.86f, 0.93f, 1f);
+                case "Nature": return new Color(0.9f, 1f, 0.88f);
+                case "Lightning": return new Color(1f, 1f, 0.9f);
+                default: return Color.white;
+            }
         }
 
         DeformSprite MakeDeform(string name, Sprite sp, Color col, float scale)

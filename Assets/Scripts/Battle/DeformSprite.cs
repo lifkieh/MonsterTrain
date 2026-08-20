@@ -27,6 +27,12 @@ namespace MTA.Battle
         public float limb = 1f;                   // idle limb-ripple strength (0 when busy)
         public float squashX = 1f, squashY = 1f;  // external squash impulse (from UnitView.Squash)
 
+        // Procedural shading (the "premium" pass): per-vertex top-light + bottom/side AO + a biome
+        // light tint, baked into vertex colours (UI shader = texture × vertexColour, so this is free).
+        // shadeLo = 1 → flat (outline/flash); < 1 → shaded volume (body).
+        public Color lightTint = Color.white;
+        public float shadeLo = 1f;
+
         public override Texture mainTexture => sprite != null ? sprite.texture : base.mainTexture;
 
         protected override void OnPopulateMesh(VertexHelper vh)
@@ -64,7 +70,12 @@ namespace MTA.Battle
 
                     float px = x0 + u * w * (1f + (squashX - 1f) * 0f) + dx;
                     float py = y0 + v * h + dy;
-                    AddVert(vh, px, py, uMin + u * uW, vMin + v * vH);
+
+                    // shading: darker toward the feet + slightly darker at the sides (rounded form)
+                    float shade = Mathf.Lerp(shadeLo, 1f, Mathf.SmoothStep(0f, 1f, v)) * (1f - 0.13f * Mathf.Abs(cx) * 2f);
+                    Color vc = color;
+                    vc.r *= lightTint.r * shade; vc.g *= lightTint.g * shade; vc.b *= lightTint.b * shade;
+                    AddVert(vh, px, py, uMin + u * uW, vMin + v * vH, vc);
                 }
             }
             int stride = CX + 1;
@@ -77,10 +88,10 @@ namespace MTA.Battle
                 }
         }
 
-        void AddVert(VertexHelper vh, float x, float y, float u, float v)
+        void AddVert(VertexHelper vh, float x, float y, float u, float v, Color vc)
         {
             var vert = UIVertex.simpleVert;
-            vert.color = color;
+            vert.color = vc;
             vert.position = new Vector3(x, y, 0f);
             vert.uv0 = new Vector4(u, v, 0f, 0f);
             vh.AddVert(vert);

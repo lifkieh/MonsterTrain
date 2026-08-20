@@ -126,7 +126,7 @@ namespace MTA.App
             BuildLoading(canvas.transform);
 
             _ctrl.Flow.OnPhaseChanged += OnPhase;
-            _view.OnFinished += _ => _ctrl.OnBattleFinished();
+            _view.OnFinished += _ => { if (!ShowcaseActive()) _ctrl.OnBattleFinished(); };   // showcase is READ-ONLY: never trigger the result/reward/save flow
             Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
             OnPhase(_ctrl.Flow.Phase);
             // Visual-review harness: `-showcase` on the command line auto-plays a fixed set of
@@ -1346,22 +1346,23 @@ namespace MTA.App
             var A = MTA.Battle.BattleMode.Arena; var Br = MTA.Battle.BattleMode.Brawl;
             var dir = System.IO.Path.Combine(Application.persistentDataPath, "showcase");
             try { System.IO.Directory.CreateDirectory(dir); } catch { }
-            var scenes = new (string name, string[] p, string[] e, bool tag, MTA.Battle.BattleMode mode, int seed)[]
+            var scenes = new (string name, string[] p, string[] e, bool tag, MTA.Battle.BattleMode mode, int seed, int enemyLevel)[]
             {
-                ("1_arena_1v1", new[]{"fire_lizard"}, new[]{"jelly"}, false, A, 101),
-                ("2_arena_2v2", new[]{"fire_lizard","mantis"}, new[]{"jelly","golem"}, false, A, 202),
-                ("3_arena_3v3", new[]{"fire_lizard","mantis","ghost"}, new[]{"jelly","golem","dragonling"}, false, A, 303),
-                ("4_brawl_3v3", new[]{"salamander","treant","kraken"}, new[]{"phoenix","mantis","turtle"}, false, Br, 404),
-                ("5_tag_3v3",   new[]{"wolf","golem","ghost"}, new[]{"dire_wolf","turtle","dragonling"}, true, A, 505),
+                ("1_arena_1v1", new[]{"fire_lizard"}, new[]{"jelly"}, false, A, 101, 12),
+                ("2_arena_2v2", new[]{"fire_lizard","mantis"}, new[]{"jelly","golem"}, false, A, 202, 12),
+                ("3_arena_3v3", new[]{"fire_lizard","mantis","ghost"}, new[]{"jelly","golem","dragonling"}, false, A, 303, 12),
+                ("4_brawl_3v3", new[]{"salamander","treant","kraken"}, new[]{"phoenix","mantis","turtle"}, false, Br, 404, 12),
+                ("5_tag_3v3",   new[]{"wolf","golem","ghost"}, new[]{"dire_wolf","turtle","dragonling"}, true, A, 505, 12),
+                ("6_victory",   new[]{"fire_lizard","mantis","ghost"}, new[]{"jelly"}, false, A, 606, 2),   // fast stomp → victory hero screen
             };
             yield return new WaitForSecondsRealtime(1.5f);
             foreach (var s in scenes)
             {
                 var lv = new Dictionary<string, int>();
                 foreach (var id in s.p) lv[id] = 12;
-                var result = _ctrl.StartShowcase(s.p, s.e, s.tag, s.seed, lv);
+                var result = _ctrl.StartShowcase(s.p, s.e, s.tag, s.seed, lv, s.enemyLevel);
                 PlayBattleView(result, s.mode, false);
-                _view.SetSpeed(1.5f);
+                _view.SetSpeed(1.6f);
                 for (int b = 0; b < 20; b++)
                 {
                     yield return new WaitForSecondsRealtime(1.4f);

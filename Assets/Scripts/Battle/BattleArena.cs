@@ -70,16 +70,22 @@ namespace MTA.Battle
             _floor = Panel(_root, "Floor", floorCol, new Vector2(980, 8), new Vector2(0, -430));
             _floor.GetComponent<Image>().color = new Color(floorCol.r * 1.25f, floorCol.g * 1.25f, floorCol.b * 1.25f);   // softer edge line (V4: was 1.6, read as a harsh neon line)
             Panel(_root, "GroundLip", Lift(floorCol, 1.5f), new Vector2(1360, 10), new Vector2(0, 62));   // near standing edge (softened)
+            // Horizon seam blend: a soft ground-tinted glow where the painted backdrop meets the ground,
+            // so there's no hard line between the baked sky/mountains and the procedural floor (V6).
+            var seam = Panel(_root, "Seam", new Color(groundCol.r * 1.15f, groundCol.g * 1.15f, groundCol.b * 1.15f, 0.5f), new Vector2(1500, 130), new Vector2(0, 40));
+            seam.GetComponent<Image>().sprite = ProceduralArt.Glow();
 
             BuildElementGround(element, groundCol, floorCol, partCol);
 
             // Foreground silhouette layer — darkest, strongest parallax (depth).
             _fore = Layer("Fore");
-            var fg = new Color(groundCol.r * 0.66f, groundCol.g * 0.66f, groundCol.b * 0.66f, 0.96f);   // lighter foreground so the lower frame isn't a heavy dead band
-            Diamond(_fore, fg, 240, new Vector2(-470, -600));
-            Diamond(_fore, fg, 190, new Vector2(430, -620));
-            Panel(_fore, "FgBar", fg, new Vector2(1360, 74), new Vector2(0, -740));           // thinner, lower — less dead slab
-            Panel(_fore, "FgEdge", Lift(fg, 1.35f), new Vector2(1360, 5), new Vector2(0, -703));   // faint top edge catches light
+            var fg = new Color(groundCol.r * 0.66f, groundCol.g * 0.66f, groundCol.b * 0.66f, 0.98f);
+            // Rounded, lit foreground boulders (V6) instead of abstract dark diamonds — reads as terrain.
+            Rock(_fore, fg, 250, new Vector2(-500, -650));
+            Rock(_fore, fg, 200, new Vector2(475, -670));
+            Rock(_fore, fg, 150, new Vector2(-280, -730));
+            Panel(_fore, "FgBar", fg, new Vector2(1400, 66), new Vector2(0, -760));
+            Panel(_fore, "FgEdge", Lift(fg, 1.3f), new Vector2(1400, 4), new Vector2(0, -725));   // faint lit top edge
 
             // Water gets a drifting mist band; other elements skip it.
             if (element == "Water")
@@ -432,6 +438,15 @@ namespace MTA.Battle
                 _gf[i] = feats[i].rt; _gfImg[i] = feats[i].img; _gfMode[i] = feats[i].mode; _gfCol[i] = feats[i].col; _gfBase[i] = feats[i].basev;
                 _gfPh[i] = feats[i].basev * 0.02f + i * 0.6f;
             }
+        }
+
+        // Foreground boulder: a rounded silhouette with a soft lit top cap (depth, not an abstract shape).
+        void Rock(RectTransform parent, Color c, float size, Vector2 pos)
+        {
+            var r = Panel(parent, "Rock", c, new Vector2(size * 1.35f, size), pos);
+            r.GetComponent<Image>().sprite = ProceduralArt.Disc();
+            var cap = Panel(parent, "RockCap", new Color(c.r * 1.5f, c.g * 1.5f, c.b * 1.5f, 0.8f), new Vector2(size * 0.7f, size * 0.42f), pos + new Vector2(-size * 0.12f, size * 0.22f));
+            cap.GetComponent<Image>().sprite = ProceduralArt.Glow();
         }
 
         void Cone(RectTransform parent, Color c, float size, Vector2 pos) { var rt = Panel(parent, "Cone", c, new Vector2(size, size), pos); rt.GetComponent<Image>().sprite = ProceduralArt.Triangle(); }
