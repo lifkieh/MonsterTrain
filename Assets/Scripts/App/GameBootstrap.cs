@@ -1157,7 +1157,7 @@ namespace MTA.App
         void BuildSelect(Transform parent, List<string> pool)
         {
             _select = UIFactory.Panel(parent, "SelectPanel", new Color(0.1f, 0.12f, 0.14f));
-            UIFactory.Label(_select, "PICK 3 MONSTERS", 44, new Vector2(0, 760), new Vector2(1000, 80), _font);
+            UIFactory.Label(_select, "PICK YOUR TEAM", 44, new Vector2(0, 760), new Vector2(1000, 80), _font);
             _selectCount = UIFactory.Label(_select, "0 / 3", 32, new Vector2(0, 690), new Vector2(600, 50), _font);
 
             // 3-column compact grid (fits the full roster without overflowing START).
@@ -1176,7 +1176,7 @@ namespace MTA.App
 
             _startBtn = UIFactory.Button(_select, "START BATTLE", new Vector2(0, -820), new Vector2(520, 110),
                 _font, OnStartBattle);
-            UIFactory.Label(_select, "Pick 3 monsters to begin", 24, new Vector2(0, 636), new Vector2(700, 40), _font)
+            UIFactory.Label(_select, "Pick 1-3 monsters   ·   1v1 / 2v2 / 3v3", 24, new Vector2(0, 636), new Vector2(760, 40), _font)
                 .color = new Color(0.7f, 0.72f, 0.8f);
             UIFactory.Button(_select, "BACK", new Vector2(0, -958), new Vector2(360, 88), _font,
                 () => { if (_ctrl.InCareer) _ctrl.ToCareer(); else _ctrl.BackToMenu(); });
@@ -1252,7 +1252,8 @@ namespace MTA.App
 
         void RefreshSelect()
         {
-            _selectCount.text = _ctrl.Session.playerTeam.Count + " / " + GameSession.TeamSize;
+            int pc = _ctrl.Session.playerTeam.Count;
+            _selectCount.text = pc + " / " + GameSession.TeamSize + (pc >= 1 ? "     " + pc + "v" + pc : "");
             foreach (var kv in _speciesButtons)
             {
                 bool unlocked = _profile.IsUnlocked(kv.Key);

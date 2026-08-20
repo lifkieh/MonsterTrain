@@ -43,10 +43,11 @@ namespace MTA.Tests
         public void Session_TeamSelectToggle()
         {
             var s = new GameSession();
-            s.TogglePlayer("a"); s.TogglePlayer("b");
-            Assert.IsFalse(s.PlayerTeamReady);
-            s.TogglePlayer("c"); Assert.IsTrue(s.PlayerTeamReady);   // 3 picked
-            s.TogglePlayer("d"); Assert.AreEqual(3, s.playerTeam.Count); // cap holds
+            Assert.IsFalse(s.PlayerTeamReady);                        // 0 picked = not ready
+            s.TogglePlayer("a"); Assert.IsTrue(s.PlayerTeamReady);    // 1 = 1v1 ready
+            s.TogglePlayer("b"); Assert.IsTrue(s.PlayerTeamReady);    // 2 = 2v2 ready
+            s.TogglePlayer("c"); Assert.IsTrue(s.PlayerTeamReady);    // 3 = 3v3 ready
+            s.TogglePlayer("d"); Assert.AreEqual(3, s.playerTeam.Count); // cap holds at TeamSize
             s.TogglePlayer("a"); Assert.AreEqual(2, s.playerTeam.Count); // deselect
         }
 

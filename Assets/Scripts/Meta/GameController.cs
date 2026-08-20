@@ -59,7 +59,7 @@ namespace MTA.Meta
             }
             else
             {
-                Session.enemyTeam = MatchRunner.RandomEnemy(_pool, GameSession.TeamSize,
+                Session.enemyTeam = MatchRunner.RandomEnemy(_pool, Session.playerTeam.Count,   // 1v1 / 2v2 / 3v3 mirror the pick
                     new System.Random(Session.matchSeed));
                 Session.enemyLevel = GameSession.Level;
                 Session.careerStageIndex = -1;

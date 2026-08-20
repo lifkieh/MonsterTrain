@@ -1070,16 +1070,17 @@ namespace MTA.Battle
             float phase = _plan.idlePhase.TryGetValue(k, out var ph) ? ph : 0f;
             float t = (float)_clock;
 
-            // Fight your opponent from YOUR side, but stay biased toward your spread lane so the
-            // six never collapse into one central pile. Circle a little so nobody is a statue.
-            Vector2 home = Formation(team, slot);              // front / mid / back spread
-            Vector2 near = new Vector2(oppPos.x + side * gap, oppPos.y);
-            Vector2 a = Vector2.Lerp(near, home, 0.5f);        // 50% home bias holds the lane
-            a.x += Mathf.Cos(t * 1.5f + phase) * 22f + Mathf.Sin(t * 0.7f + phase) * 10f;
-            a.y = Mathf.Lerp(a.y, home.y, 0.4f) + Mathf.Sin(t * 1.9f + phase) * 16f;   // hold your lane's height
-            a.x = team == 0 ? Mathf.Min(a.x, -70f) : Mathf.Max(a.x, 70f);   // never cross the centre line
+            // REAL TAWURAN: chase and stay glued to YOUR current opponent — no returning to a
+            // formation lane. Because each unit's opponent comes from its own engagement segment,
+            // the fights fan out across the arena on their own; Separate() stops any pixel-collapse.
+            Vector2 a = new Vector2(oppPos.x + side * gap, oppPos.y);   // right up on your target
+            a.x += Mathf.Cos(t * 1.7f + phase) * 30f + Mathf.Sin(t * 0.9f + phase) * 14f;   // weave, never a statue
+            a.y += Mathf.Sin(t * 1.9f + phase) * 22f + Mathf.Cos(t * 0.6f + phase) * 12f;
+            // stay on your own side of the target you're fighting (don't run past it), but do NOT
+            // snap to a home position — you live where the fight is.
+            a.x = team == 0 ? Mathf.Min(a.x, oppPos.x - 40f) : Mathf.Max(a.x, oppPos.x + 40f);
             if (ranged && ov != null && !ov.IsDead && Mathf.Abs(ov.BasePos.x - a.x) < 260f)
-                a.x += side * 150f;                            // kite: back off when the enemy closes
+                a.x += side * 150f;                            // ranged kite: back off when the enemy closes
             return a;
         }
 

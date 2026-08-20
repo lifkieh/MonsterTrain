@@ -68,9 +68,11 @@ namespace MTA.Tests
         {
             var c = NewController();
             c.StartGame();
-            c.ToggleSpecies("a");
-            Assert.IsNull(c.StartBattle());               // only 1 picked
+            Assert.IsNull(c.StartBattle());               // 0 picked = blocked
             Assert.AreNotEqual(GamePhase.Battle, c.Flow.Phase);
+            c.ToggleSpecies("a");
+            Assert.IsNotNull(c.StartBattle());            // 1 picked = 1v1 allowed
+            Assert.AreEqual(GamePhase.Battle, c.Flow.Phase);
         }
 
         [Test]

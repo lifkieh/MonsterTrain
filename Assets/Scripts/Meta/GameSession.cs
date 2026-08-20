@@ -17,7 +17,9 @@ namespace MTA.Meta
         public int matchSeed;
         public BattleResult lastResult;
 
-        public bool PlayerTeamReady => playerTeam.Count == TeamSize;
+        // Ready with 1..TeamSize picks — the count chooses the mode (1v1 / 2v2 / 3v3).
+        // The enemy team is generated to match this count (see GameController.StartBattle).
+        public bool PlayerTeamReady => playerTeam.Count >= 1 && playerTeam.Count <= TeamSize;
 
         // Team-select tap: add if room and not present, else remove.
         public void TogglePlayer(string speciesId)
