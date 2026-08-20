@@ -40,49 +40,23 @@ namespace MTA.Battle
             _root = Panel(parent, "Arena", skyTop, new Vector2(1360, 2560), Vector2.zero);   // fills the full portrait screen — no black bands (V1)
             _root.SetAsFirstSibling();
 
-            // The forest photo only fits NATURE — using it (tinted) for every element made
-            // Fire/Water read as "a forest with a colour filter". So the photo backdrop is now
-            // Nature/default only; Fire and Water build a procedural element sky (gradient bands
-            // + far mountains) which, with their distinct biome silhouettes + ground features
-            // below, actually read as lava / sea rather than a tinted forest.
-            bool useForest = element != "Fire" && element != "Water";
-            var backdrop = useForest ? Resources.Load<Texture2D>("Arena/forest") : null;
-            if (backdrop != null)
-            {
-                var go = new GameObject("Backdrop", typeof(RectTransform), typeof(RawImage));
-                _backdrop = go.GetComponent<RectTransform>(); _backdrop.SetParent(_root, false);
-                _backdrop.anchorMin = _backdrop.anchorMax = new Vector2(0.5f, 0.5f);
-                _backdrop.sizeDelta = new Vector2(1320, 1240); _backdrop.anchoredPosition = new Vector2(0, 200);
-                var img = go.GetComponent<RawImage>(); img.texture = backdrop; img.raycastTarget = false;
-                img.uvRect = new Rect(0.12f, 0f, 0.42f, 1f);
-                img.color = element == "Fire" ? new Color(1f, 0.72f, 0.55f)
-                          : element == "Water" ? new Color(0.7f, 0.85f, 1.05f)
-                          : element == "Nature" ? new Color(0.92f, 1f, 0.9f)
-                          : new Color(0.85f, 0.8f, 0.95f);
-            }
-            else
-            {
-                const int bands = 14;
-                for (int i = 0; i < bands; i++)
-                {
-                    float f = i / (float)(bands - 1);
-                    Panel(_root, "Sky", Color.Lerp(skyTop, skyHor, f), new Vector2(1400, 175), new Vector2(0, 1120 - i * 160));
-                }
-                _far = Layer("Far");
-                var mtn = new Color(mtnCol.r, mtnCol.g, mtnCol.b, 0.9f);
-                float[] mx = { -430, -210, 40, 250, 470 };
-                float[] ms = { 360, 520, 430, 600, 380 };
-                for (int i = 0; i < mx.Length; i++) Diamond(_far, mtn, ms[i], new Vector2(mx[i], -430));
-            }
+            // PAINTED backdrop (env-artist pass): one baked texture per biome — graded sky, soft
+            // clouds, a hazy sun, and two atmospheric mountain ridges — covering the whole upper
+            // scene. Replaces the flat sky-band gradient + silhouette layers + the reused forest
+            // photo, so Fire / Water / Nature all read as painted, layered locations of one quality.
+            var backTex = PaintedBackdrop.For(element, skyTop, skyHor, mtnCol, groundCol);
+            var bgo = new GameObject("Backdrop", typeof(RectTransform), typeof(RawImage));
+            _backdrop = bgo.GetComponent<RectTransform>(); _backdrop.SetParent(_root, false);
+            _backdrop.anchorMin = _backdrop.anchorMax = new Vector2(0.5f, 0.5f);
+            _backdrop.sizeDelta = new Vector2(1400, 1900); _backdrop.anchoredPosition = new Vector2(0, 180);
+            var bimg = bgo.GetComponent<RawImage>(); bimg.texture = backTex; bimg.raycastTarget = false;
 
             _near = Layer("Near");
             var pil = new Color(floorCol.r * 0.6f, floorCol.g * 0.6f, floorCol.b * 0.6f, 0.95f);
             Panel(_near, "PillarL", pil, new Vector2(120, 900), new Vector2(-520, -180));
             Panel(_near, "PillarR", pil, new Vector2(120, 900), new Vector2(520, -180));
 
-            // Distant biome silhouettes (volcano cones / sea horizon / tree line) in front of
-            // the tinted backdrop, so the DISTANCE reads as the element, not just a colour wash.
-            BuildElementFar(element, mtnCol, groundCol, partCol);
+            // (Distant biome silhouettes are now baked into the painted backdrop above.)
 
             // ---- Ground: a receding TERRAIN plane, not a glow pad ----
             // Three tone bands (far-dark → near-light) read as a floor you stand ON; a bright
@@ -276,7 +250,6 @@ namespace MTA.Battle
             }
             // water surface wave + fire heat shimmer + drifting mist
             if (water && _floor != null) _floor.anchoredPosition = _floorHome + new Vector2(Mathf.Sin(_drift * 1.5f) * 8f, 0f);
-            if (fire && _backdrop != null) _backdrop.anchoredPosition = _backdropHome + new Vector2(Mathf.Sin(_drift * 3.2f) * 4f, 0f);   // heat shimmer
             if (_mist != null) _mist.anchoredPosition = new Vector2(Mathf.Sin(_drift * 0.4f) * 60f, -320f + Mathf.Sin(_drift * 0.7f) * 20f);
 
             // animated ground features: lava glow pulse / water ripple loop / grass sway
@@ -341,7 +314,7 @@ namespace MTA.Battle
             if (_near != null) _near.anchoredPosition = _nearHome - cam * 0.09f;
             if (_fore != null) _fore.anchoredPosition = _foreHome - cam * 0.17f;   // foreground moves most
             if (_biome != null) _biome.anchoredPosition = _biomeHome - cam * 0.05f;
-            if (_backdrop != null && _element != "Fire") _backdrop.anchoredPosition = _backdropHome - cam * 0.02f;
+            if (_backdrop != null) _backdrop.anchoredPosition = _backdropHome - cam * 0.02f;   // painted backdrop parallax (all biomes)
         }
 
         public void Destroy() { if (_root != null) Object.Destroy(_root.gameObject); }

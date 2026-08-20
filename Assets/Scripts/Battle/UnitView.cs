@@ -15,7 +15,8 @@ namespace MTA.Battle
         const float FOOT = 140f;       // sprite center -> ground line (feet) offset (scales with ART)
         const float MAX_JUMP = 300f;   // launch height at which the shadow is smallest
 
-        Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
+        Image _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
+        DeformSprite _dBody, _dOutline, _dFlash; Graphic _flash; Sprite _spriteRef;   // mesh-deform body + outline + flash (the "animator")
         RectTransform _rt, _artRt, _shadowRt, _barsRt, _hpBgRt, _nameRt, _elemDotRt; Text _name;
         Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
@@ -69,29 +70,16 @@ namespace MTA.Battle
             _artRt.localScale = new Vector3(_mirror, 1f, 1f);
 
             var sprite = MonsterVisual.For(speciesId, false);   // FRONT sprite for BOTH sides (KOF staging)
+            _spriteRef = sprite;
             if (sprite != null)
             {
-                // Separation outline (V2 readability): a dark, slightly-enlarged copy of the
-                // same sprite BEHIND the fighter, so the silhouette pops off busy/dark biomes.
-                var ol = new GameObject("Outline", typeof(RectTransform), typeof(Image));
-                var olrt = ol.GetComponent<RectTransform>(); olrt.SetParent(_artRt, false);
-                olrt.anchorMin = Vector2.zero; olrt.anchorMax = Vector2.one; olrt.offsetMin = Vector2.zero; olrt.offsetMax = Vector2.zero;
-                olrt.localScale = new Vector3(1.075f, 1.075f, 1f);
-                var oli = ol.GetComponent<Image>(); oli.sprite = sprite; oli.preserveAspect = true; oli.raycastTarget = false;
-                oli.color = new Color(0.03f, 0.03f, 0.05f, 0.62f);
-
-                var img = new GameObject("Sprite", typeof(RectTransform), typeof(Image));
-                var irt = img.GetComponent<RectTransform>(); irt.SetParent(_artRt, false);
-                irt.anchorMin = Vector2.zero; irt.anchorMax = Vector2.one; irt.offsetMin = Vector2.zero; irt.offsetMax = Vector2.zero;
-                _sprite = img.GetComponent<Image>(); _sprite.sprite = sprite; _sprite.preserveAspect = true; _sprite.raycastTarget = false;
-
-                // Silhouette flash: a white copy of the SAME sprite on top (matches the
-                // creature outline exactly; alpha driven per-frame). No backing rectangle.
-                var fl = new GameObject("Flash", typeof(RectTransform), typeof(Image));
-                var frt = fl.GetComponent<RectTransform>(); frt.SetParent(_artRt, false);
-                frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
-                _flash = fl.GetComponent<Image>(); _flash.sprite = sprite; _flash.preserveAspect = true;
-                _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
+                // Mesh-deform body: the same sprite on a grid whose vertices breathe / sway / bend
+                // every frame (the "animator"). Outline (dark, behind) + flash (white, on top) are
+                // deform copies sharing the SAME shape, so they wobble together with the body.
+                _dOutline = MakeDeform("Outline", sprite, new Color(0.03f, 0.03f, 0.05f, 0.62f), 1.075f);
+                _dBody = MakeDeform("Body", sprite, Color.white, 1f);
+                _dFlash = MakeDeform("Flash", sprite, new Color(1, 1, 1, 0), 1f); _flash = _dFlash;
+                _dBody.phase = _dOutline.phase = _dFlash.phase = anchoredPos.x * 0.05f + anchoredPos.y * 0.03f;
             }
             else
             {
@@ -101,7 +89,7 @@ namespace MTA.Battle
                 var fl = new GameObject("Flash", typeof(RectTransform), typeof(Image));
                 var frt = fl.GetComponent<RectTransform>(); frt.SetParent(_artRt, false);
                 frt.anchorMin = Vector2.zero; frt.anchorMax = Vector2.one; frt.offsetMin = Vector2.zero; frt.offsetMax = Vector2.zero;
-                _flash = fl.GetComponent<Image>(); _flash.sprite = ProceduralArt.Disc(); _flash.color = new Color(1, 1, 1, 0); _flash.raycastTarget = false;
+                var flImg = fl.GetComponent<Image>(); flImg.sprite = ProceduralArt.Disc(); flImg.color = new Color(1, 1, 1, 0); flImg.raycastTarget = false; _flash = flImg;
             }
             _artGroup = _artRt.gameObject.AddComponent<CanvasGroup>();
 
@@ -130,6 +118,28 @@ namespace MTA.Battle
 
             _lastPos = anchoredPos;
             _spawnT = 0f;   // spawn-pop
+        }
+
+        DeformSprite MakeDeform(string name, Sprite sp, Color col, float scale)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(DeformSprite));
+            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_artRt, false);
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = rt.offsetMax = Vector2.zero;
+            rt.localScale = new Vector3(scale, scale, 1f);
+            var d = go.GetComponent<DeformSprite>(); d.sprite = sp; d.color = col; d.raycastTarget = false;
+            return d;
+        }
+
+        void PushDeform(float sway, float lean, float breathe, float wobble, float limb)
+        {
+            SetD(_dBody, sway, lean, breathe, wobble, limb);
+            SetD(_dOutline, sway, lean, breathe, wobble, limb);
+            SetD(_dFlash, sway, lean, breathe, wobble, limb);
+        }
+        static void SetD(DeformSprite d, float sway, float lean, float breathe, float wobble, float limb)
+        {
+            if (d == null) return;
+            d.sway = sway; d.lean = lean; d.breathe = breathe; d.wobbleAmp = wobble; d.limb = limb;
         }
 
         static Image MakeFill(RectTransform parent, Color c)
@@ -187,7 +197,7 @@ namespace MTA.Battle
         public void Spin(float degPerSec, float dur) { if (_dead) return; _spinSpeed = degPerSec; _spinT = Mathf.Max(_spinT, dur); }
         public void Vibrate(float mag, float dur) { if (_dead) return; _vibMag = Mathf.Max(_vibMag, mag); _vibT = Mathf.Max(_vibT, dur); }
         public void ImpactSilhouette(float dur) { _impSilT = Mathf.Max(0.01f, dur); }
-        public Sprite CurrentSprite => _sprite != null ? _sprite.sprite : null;
+        public Sprite CurrentSprite => _spriteRef;
         public Vector2 RenderPos => _rt != null ? _rt.anchoredPosition : _basePos;
         public float RenderScale => _rt != null ? _rt.localScale.x : 1f;
         public int Mirror => _mirror;
@@ -294,6 +304,7 @@ namespace MTA.Battle
             Vector2 idle = new Vector2(step, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * light) + ph)) * bob);
             float breathe = 1f + Mathf.Sin(t * 3f * light + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.045f * light);
             Vector2 animOff = Vector2.zero; float animScale = 1f;
+            float meshLean = 0f, hitWobble = 0f;
             Color flashC = new Color(1f, 1f, 1f, 0f);
 
             if (_anim != Anim.None)
@@ -307,12 +318,14 @@ namespace MTA.Battle
                         animOff = _animDir * (AttackCurve(p) * _animDist);
                         if (_animUlt) animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
                         animScale *= 1f + Mathf.Sin(p * Mathf.PI) * 0.06f * (_weight - 1f);   // heavy bodies pop harder on the swing
+                        meshLean = animOff.x * 0.16f;   // the body bends into the swing (mesh)
                         break;
                     case Anim.Hit:
                         animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * _animMag, 0f);
                         _extraTilt = Mathf.Sin(p * 46f) * (1f - p) * 11f * _animMag;   // head-snap away from the blow
                         flashC = new Color(1f, 1f, 1f, (1f - p) * 0.85f);
                         animScale = 1f + (1f - p) * 0.06f * _animMag;
+                        hitWobble = (1f - p) * 7f * _animMag;   // body ripples on impact (mesh)
                         break;
                     case Anim.Heal:
                         animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
@@ -336,9 +349,13 @@ namespace MTA.Battle
             Vector2 apos = _basePos + idle + animOff + _impulse + combatOffset + roam;
             _vel = (apos - _lastPos) / Mathf.Max(dt, 1e-4f); _lastPos = apos;   // for lean & auto-stretch
             _rt.anchoredPosition = apos;
-            _rt.localScale = Vector3.one * (breathe * animScale * spawnScale);
+            _rt.localScale = Vector3.one * (animScale * spawnScale);   // breathing now lives in the mesh, not a uniform scale
             _rt.localRotation = Quaternion.identity;
             ApplyDeform(dt);
+            // Feed the mesh-deform animator: chest-rise breathing, idle upper-body sway, attack bend,
+            // impact ripple, and idle limb-ripple (only at rest). Makes the flat sprite read animated.
+            float breathePx = (breathe - 1f) * ART * 0.5f;
+            PushDeform(step * 0.7f, meshLean, breathePx, hitWobble, _roamFactor);
             if (_artGroup != null) _artGroup.alpha = _reserveDim;
             if (_impSilT > 0f) { _impSilT -= dt; flashC = new Color(1f, 1f, 1f, 1f); }   // impact-frame silhouette
             if (_flash != null) _flash.color = flashC;
