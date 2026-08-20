@@ -129,6 +129,11 @@ namespace MTA.App
             _view.OnFinished += _ => _ctrl.OnBattleFinished();
             Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
             OnPhase(_ctrl.Flow.Phase);
+            // Visual-review harness: `-showcase` on the command line auto-plays a fixed set of
+            // deterministic battles (no menus, no input) so the combat can be captured by an
+            // external screenshotter. Dev tooling only — never reached in normal play.
+            if (ShowcaseActive()) { StartCoroutine(ShowcaseRoutine()); StartCoroutine(HideLoading()); return; }
+
             // First launch: run onboarding. Otherwise greet with the daily reward if claimable.
             if (!_profile.onboarded) _ctrl.ToOnboarding();
             else if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
@@ -1309,15 +1314,62 @@ namespace MTA.App
             _ctrl.Session.playerLevels = BuildLevelMap();   // player monsters fight at collection level
             var result = _ctrl.StartBattle();
             if (result == null) return;
+            int csi = _ctrl.Session.careerStageIndex;       // boss music on each league-finale stage
+            bool boss = csi >= 0 && (csi + 1) % Career.PerLeague == 0;
+            var mode = (boss || _ctrl.Session.tagMode) ? MTA.Battle.BattleMode.Arena : MTA.Battle.BattleMode.Brawl;
+            PlayBattleView(result, mode, boss);
+        }
+
+        // Shared battle-view setup + play (used by real battles and the showcase harness).
+        void PlayBattleView(BattleResult result, MTA.Battle.BattleMode mode, bool boss)
+        {
             var replay = ReplayBuilder.Build(result, _slotMap);
             _view.elementColors = _elemColors;            // element indicators on fighters
             _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
             _view.displayNames = _displayNames;           // Title Case names over fighters
             _view.rarities = _rarities;                   // VS-screen rarity stars
-            int csi = _ctrl.Session.careerStageIndex;     // boss music on each league-finale stage
-            _view.bossMusic = csi >= 0 && (csi + 1) % Career.PerLeague == 0;
-            _view.mode = (_view.bossMusic || _ctrl.Session.tagMode) ? MTA.Battle.BattleMode.Arena : MTA.Battle.BattleMode.Brawl;   // boss/finale or tag = duel showcase, else brawl
+            _view.bossMusic = boss;
+            _view.mode = mode;
             _view.Play(result, replay, _atkStyles, _battle, _font);
+        }
+
+        // ===================== Visual-review showcase harness =====================
+        static bool ShowcaseActive()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++) if (args[i] == "-showcase") return true;
+            return false;
+        }
+
+        System.Collections.IEnumerator ShowcaseRoutine()
+        {
+            var A = MTA.Battle.BattleMode.Arena; var Br = MTA.Battle.BattleMode.Brawl;
+            var dir = System.IO.Path.Combine(Application.persistentDataPath, "showcase");
+            try { System.IO.Directory.CreateDirectory(dir); } catch { }
+            var scenes = new (string name, string[] p, string[] e, bool tag, MTA.Battle.BattleMode mode, int seed)[]
+            {
+                ("1_arena_1v1", new[]{"fire_lizard"}, new[]{"jelly"}, false, A, 101),
+                ("2_arena_2v2", new[]{"fire_lizard","mantis"}, new[]{"jelly","golem"}, false, A, 202),
+                ("3_arena_3v3", new[]{"fire_lizard","mantis","ghost"}, new[]{"jelly","golem","dragonling"}, false, A, 303),
+                ("4_brawl_3v3", new[]{"salamander","treant","kraken"}, new[]{"phoenix","mantis","turtle"}, false, Br, 404),
+                ("5_tag_3v3",   new[]{"wolf","golem","ghost"}, new[]{"dire_wolf","turtle","dragonling"}, true, A, 505),
+            };
+            yield return new WaitForSecondsRealtime(1.5f);
+            foreach (var s in scenes)
+            {
+                var lv = new Dictionary<string, int>();
+                foreach (var id in s.p) lv[id] = 12;
+                var result = _ctrl.StartShowcase(s.p, s.e, s.tag, s.seed, lv);
+                PlayBattleView(result, s.mode, false);
+                _view.SetSpeed(1.5f);
+                for (int b = 0; b < 20; b++)
+                {
+                    yield return new WaitForSecondsRealtime(1.4f);
+                    try { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, s.name + "_" + b.ToString("D2") + ".png")); } catch { }
+                }
+                yield return new WaitForSecondsRealtime(1.0f);
+            }
+            Debug.Log("SHOWCASE_DONE dir=" + dir);
         }
 
         static void Quit()

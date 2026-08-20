@@ -69,6 +69,24 @@ namespace MTA.Meta
             return result;
         }
 
+        // Deterministic showcase battle for the visual-review harness: fixed teams + seed +
+        // mode, no random enemy, no match-count advance. Presentation tooling only; does not
+        // touch balance/save/progression.
+        public BattleResult StartShowcase(IList<string> playerIds, IList<string> enemyIds, bool tag, int seed, IDictionary<string, int> levels)
+        {
+            Session.ClearPlayer();
+            foreach (var id in playerIds) Session.playerTeam.Add(id);
+            Session.enemyTeam = new List<string>(enemyIds);
+            Session.enemyLevel = 12;                         // fuller HP so ultimates + KO occur on screen
+            Session.tagMode = tag;
+            Session.playerLevels = levels == null ? null : new Dictionary<string, int>(levels);
+            Session.careerStageIndex = -1;
+            Session.matchSeed = seed;
+            var result = MatchRunner.Run(Session, _reg, _cfg);
+            Flow.GoBattle();
+            return result;
+        }
+
         public void OnBattleFinished() => Flow.GoResult();       // view -> Result
 
         public void PlayAgain()                                  // Result -> TeamSelect
