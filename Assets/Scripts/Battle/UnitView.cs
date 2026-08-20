@@ -11,8 +11,8 @@ namespace MTA.Battle
     // same sprite), never a rectangle. Renders only — no simulation.
     public class UnitView : MonoBehaviour
     {
-        const float ART = 256f;        // sprite display size (4x the 64px source = crisp)
-        const float FOOT = 108f;       // sprite center -> ground line (feet) offset
+        const float ART = 336f;        // sprite display size (bigger = fighters dominate the frame, V1 reframing)
+        const float FOOT = 140f;       // sprite center -> ground line (feet) offset (scales with ART)
         const float MAX_JUMP = 300f;   // launch height at which the shadow is smallest
 
         Image _sprite, _flash, _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
@@ -71,6 +71,15 @@ namespace MTA.Battle
             var sprite = MonsterVisual.For(speciesId, false);   // FRONT sprite for BOTH sides (KOF staging)
             if (sprite != null)
             {
+                // Separation outline (V2 readability): a dark, slightly-enlarged copy of the
+                // same sprite BEHIND the fighter, so the silhouette pops off busy/dark biomes.
+                var ol = new GameObject("Outline", typeof(RectTransform), typeof(Image));
+                var olrt = ol.GetComponent<RectTransform>(); olrt.SetParent(_artRt, false);
+                olrt.anchorMin = Vector2.zero; olrt.anchorMax = Vector2.one; olrt.offsetMin = Vector2.zero; olrt.offsetMax = Vector2.zero;
+                olrt.localScale = new Vector3(1.075f, 1.075f, 1f);
+                var oli = ol.GetComponent<Image>(); oli.sprite = sprite; oli.preserveAspect = true; oli.raycastTarget = false;
+                oli.color = new Color(0.03f, 0.03f, 0.05f, 0.62f);
+
                 var img = new GameObject("Sprite", typeof(RectTransform), typeof(Image));
                 var irt = img.GetComponent<RectTransform>(); irt.SetParent(_artRt, false);
                 irt.anchorMin = Vector2.zero; irt.anchorMax = Vector2.one; irt.offsetMin = Vector2.zero; irt.offsetMax = Vector2.zero;
@@ -115,8 +124,8 @@ namespace MTA.Battle
             var np = new GameObject("Name", typeof(RectTransform));
             var nprt = np.GetComponent<RectTransform>(); nprt.SetParent(_barsRt, false);
             nprt.anchorMin = nprt.anchorMax = new Vector2(0.5f, 0.5f);
-            nprt.sizeDelta = new Vector2(240, 30); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 46f);
-            _name = MakeText(nprt, font, displayName, 20, Vector2.zero, TextAnchor.MiddleCenter);
+            nprt.sizeDelta = new Vector2(196, 26); nprt.anchoredPosition = new Vector2(0, ART * 0.5f + 44f);
+            _name = MakeText(nprt, font, displayName, 17, Vector2.zero, TextAnchor.MiddleCenter);
             _name.fontStyle = FontStyle.Bold;
 
             _lastPos = anchoredPos;
@@ -226,10 +235,11 @@ namespace MTA.Battle
                     // Near-death danger pulse — instant "this one is about to die" read (readability target).
                     float pulse = 0.5f + 0.5f * Mathf.Abs(Mathf.Sin(Time.time * 7f));
                     _hpFill.color = new Color(1f, 0.16f * pulse, 0.12f * pulse);
-                    if (_barGroup != null) _barGroup.alpha = 0.75f + 0.25f * pulse;   // whole bar throbs
+                    if (_barGroup != null) _barGroup.alpha = (0.75f + 0.25f * pulse) * _reserveDim;   // whole bar throbs
                 }
             }
-            else if (_barGroup != null && !_dead) _barGroup.alpha = 1f;
+            // Healthy/hurt bars follow the reserve dim so benched fighters' HUD recedes (declutter flanks).
+            if (_barGroup != null && !_dead && _dispFrac > 0.25f) _barGroup.alpha = _reserveDim;
             if (_hpDelayed != null) _hpDelayed.fillAmount = _delayFrac;
 
             if (_spawnT < 1f) _spawnT = Mathf.Min(1f, _spawnT + dt / 0.3f);

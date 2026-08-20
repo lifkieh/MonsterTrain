@@ -82,6 +82,7 @@ namespace MTA.Battle
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
         float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
+        float _baseZoom = 1f;   // dynamic rest zoom: framed by roster size so 1v1 is hero-sized and 3v3 isn't miniature (V1)
         Vector2 _camPush;   // directional camera language on big hits
         float _slowmo = 1f, _slowmoT;
         Image _screenFlash; float _flashT;
@@ -210,6 +211,13 @@ namespace MTA.Battle
 
             _teamCount[0] = _teamCount[1] = 0;
             foreach (var u in _pb.Units) if (u.team >= 0 && u.team < 2) _teamCount[u.team]++;
+
+            // Dynamic framing: the bigger the fight, the wider the rest camera — so 1v1 fills
+            // the frame like a hero shot and 3v3 stays readable without cramming. Presentation only.
+            int roster = Mathf.Max(_teamCount[0], _teamCount[1]);
+            _baseZoom = mode == BattleMode.Arena
+                ? (roster <= 1 ? 1.42f : roster == 2 ? 1.26f : 1.12f)
+                : (roster <= 1 ? 1.34f : roster == 2 ? 1.18f : 1.05f);
 
             var size = new Vector2(256, 386);
             foreach (var u in _pb.Units)
@@ -389,7 +397,7 @@ namespace MTA.Battle
                 _superRoot.gameObject.SetActive(true); _superRoot.SetAsLastSibling();
                 if (sprite != null) { _superSil.sprite = sprite; _superCutin.sprite = sprite; }
                 _superBanner.text = SpeciesIdentity.SkillWord(actorSp).ToUpper();
-                _zoomTarget = 1.2f;
+                _zoomTarget = _baseZoom + 0.18f;
                 float total = 1.0f, t = 0f;
                 while (t < total)
                 {
@@ -534,7 +542,7 @@ namespace MTA.Battle
                 bool eventsDone = _replay == null || _rIdx >= _replay.Count;
                 if (!_finishedFired && eventsDone && _clock >= _pb.Duration && _hitstop <= 0f)
                 {
-                    _finishedFired = true; _playing = false; _zoomTarget = 1.12f; _letterTarget = 0f; _finDarkTarget = 0f;
+                    _finishedFired = true; _playing = false; _zoomTarget = _baseZoom + 0.1f; _letterTarget = 0f; _finDarkTarget = 0f;
                     int wIdx = 0; float sidew = _pb.WinnerTeam == 0 ? -1f : 1f;
                     foreach (var wu in _pb.Units)
                         if (wu.team == _pb.WinnerTeam && wu.Alive && _views.TryGetValue(Key(wu.team, wu.slot), out var wv))
@@ -554,7 +562,7 @@ namespace MTA.Battle
         AttackStyle StyleOf(int team, int slot) =>
             _styleByKey.TryGetValue(Key(team, slot), out var s) ? s : AttackStyle.MeleeLunge;
         Vector2 PosOf(int team, int slot) => View(team, slot) is UnitView v ? v.BasePos : Formation(team, slot);
-        static Vector2 Ground(Vector2 p) => new Vector2(p.x, p.y - 110f);   // feet on the arena floor
+        static Vector2 Ground(Vector2 p) => new Vector2(p.x, p.y - 132f);   // feet on the arena floor (scales with bigger sprites)
 
         void Apply(ReplayEvent e, ChoreoBeat b, int idx)
         {
@@ -590,7 +598,7 @@ namespace MTA.Battle
                     if (e.isBuff)
                     {
                         av?.PlayAttack(dir, DashDist(st, ult) * 0.4f, ult);
-                        if (ult) { _zoomTarget = 1.14f; ApplyCam(b.cam); }
+                        if (ult) { _zoomTarget = _baseZoom + 0.12f; ApplyCam(b.cam); }
                         break;
                     }
 
@@ -627,7 +635,7 @@ namespace MTA.Battle
                     {
                         _spotlightBusy = true;                       // claim the single cinematic slot NOW
                         _spotlightTargetKey = Key(tt, ts);
-                        _zoomTarget = ult ? 1.14f : 1.05f;
+                        _zoomTarget = _baseZoom + (ult ? 0.14f : 0.06f);
                         StartCoroutine(SpotlightCombo(e.actorTeam, e.actorSlot, tt, ts, b, st, actorSp, ult));
                     }
                     else if (_busyUnits.Contains(Key(e.actorTeam, e.actorSlot)))
@@ -1031,7 +1039,7 @@ namespace MTA.Battle
                 if (_busyUnits.Contains(k) || k == _spotlightTargetKey) continue;   // active duel choreo owns it
                 float side = u.team == 0 ? -1f : 1f;
                 Vector2 target = active
-                    ? new Vector2(side * 190f, -30f)                     // duel centre, own side
+                    ? new Vector2(side * 208f, -30f)                     // duel centre, own side (wider gap for bigger sprites)
                     : BenchAnchor(u.team, u.slot);                       // flank
                 float spd = active ? 560f : 940f;                        // reserves snap back to the bench fast
                 v.SetBasePos(ClampArena(Vector2.MoveTowards(v.BasePos, target, spd * dt)));
@@ -1050,7 +1058,7 @@ namespace MTA.Battle
         static Vector2 BenchAnchor(int team, int slot)
         {
             float side = team == 0 ? -1f : 1f;
-            return new Vector2(side * 452f, 150f - slot * 150f);
+            return new Vector2(side * 430f, 150f - slot * 150f);   // pulled in so bigger reserves stay on-screen
         }
 
         static Vector2 ChargeAnchor(int team, int slot)
@@ -1074,11 +1082,17 @@ namespace MTA.Battle
             // formation lane. Because each unit's opponent comes from its own engagement segment,
             // the fights fan out across the arena on their own; Separate() stops any pixel-collapse.
             Vector2 a = new Vector2(oppPos.x + side * gap, oppPos.y);   // right up on your target
+            a.y += (slot - 1) * 66f;   // per-slot vertical lane so a team fans out instead of piling on one point (V1 brawl spread)
             a.x += Mathf.Cos(t * 1.7f + phase) * 30f + Mathf.Sin(t * 0.9f + phase) * 14f;   // weave, never a statue
             a.y += Mathf.Sin(t * 1.9f + phase) * 22f + Mathf.Cos(t * 0.6f + phase) * 12f;
             // stay on your own side of the target you're fighting (don't run past it), but do NOT
             // snap to a home position — you live where the fight is.
             a.x = team == 0 ? Mathf.Min(a.x, oppPos.x - 40f) : Mathf.Max(a.x, oppPos.x + 40f);
+            // Fan the scrum across the arena width: a mild pull toward a per-slot lane on the unit's
+            // OWN half, so the brawl spreads left-vs-right instead of collapsing into one corner. The
+            // unit still tracks its opponent (dominant term); this only biases where the fights sit.
+            float laneX = side * (175f + slot * 145f);
+            a.x = Mathf.Lerp(a.x, laneX, 0.24f);
             if (ranged && ov != null && !ov.IsDead && Mathf.Abs(ov.BasePos.x - a.x) < 260f)
                 a.x += side * 150f;                            // ranged kite: back off when the enemy closes
             return a;
@@ -1113,7 +1127,7 @@ namespace MTA.Battle
         // Soft separation so the tangle never collapses onto one pixel (rule 8).
         void Separate()
         {
-            const float minD = 135f;
+            const float minD = 162f;   // wider so bigger sprites don't overlap
             var units = _pb.Units;
             for (int i = 0; i < units.Count; i++)
             {
@@ -1229,11 +1243,11 @@ namespace MTA.Battle
         {
             switch (c)
             {
-                case ChoreoCam.ZoomCombo: _zoomTarget = 1.06f; break;
-                case ChoreoCam.ShakeCrit: _zoomTarget = 1.08f; Shake(12f); ZoomPunch(0.05f); FlashScreen(0.5f); break;
-                case ChoreoCam.CinematicZoom: _zoomTarget = 1.15f; ZoomPunch(0.1f); Shake(16f); FlashScreen(0.8f); break;
-                case ChoreoCam.SlowMoFinisher: _zoomTarget = 1.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); _letterTarget = 1f; _finDarkTarget = 1f; break;
-                case ChoreoCam.ZoomWinner: _zoomTarget = 1.12f; break;
+                case ChoreoCam.ZoomCombo: _zoomTarget = _baseZoom + 0.06f; break;
+                case ChoreoCam.ShakeCrit: _zoomTarget = _baseZoom + 0.08f; Shake(12f); ZoomPunch(0.05f); FlashScreen(0.5f); break;
+                case ChoreoCam.CinematicZoom: _zoomTarget = _baseZoom + 0.15f; ZoomPunch(0.1f); Shake(16f); FlashScreen(0.8f); break;
+                case ChoreoCam.SlowMoFinisher: _zoomTarget = _baseZoom + 0.24f; Shake(22f); StartSlowMo(); FlashScreen(0.6f); _letterTarget = 1f; _finDarkTarget = 1f; break;
+                case ChoreoCam.ZoomWinner: _zoomTarget = _baseZoom + 0.12f; break;
             }
         }
 
@@ -1321,8 +1335,8 @@ namespace MTA.Battle
             while (t < 1f)
             {
                 t += Time.deltaTime / 0.35f; float e = Mathf.Clamp01(t);
-                rt.sizeDelta = Vector2.one * Mathf.Lerp(60f, 440f, e);
-                img.color = new Color(col.r, col.g, col.b, (1f - e) * 0.7f);
+                rt.sizeDelta = Vector2.one * Mathf.Lerp(60f, 360f, e);
+                img.color = new Color(col.r, col.g, col.b, (1f - e) * 0.55f);   // thinner ring — less over-layer noise at the climax
                 yield return null;
             }
             Destroy(go);
@@ -1340,7 +1354,7 @@ namespace MTA.Battle
         // over-shake/over-zoom destroys readability — the brief's readability>spectacle rule).
         float CamAggr => mode == BattleMode.Arena ? 1f : 0.5f;
         void Shake(float mag) { mag *= CamAggr; float dur = 0.18f + mag * 0.006f; if (dur > _shakeT) { _shakeT = dur; _shakeDur = dur; } _shakeMag = Mathf.Max(_shakeMag, mag); }
-        void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt * CamAggr, mode == BattleMode.Arena ? 1.35f : 1.14f); }
+        void ZoomPunch(float amt) { _zoom = Mathf.Min(_zoom + amt * CamAggr, _baseZoom + (mode == BattleMode.Arena ? 0.32f : 0.16f)); }
         void CamPush(Vector2 dir, float amt) { if (dir.sqrMagnitude > 0.0001f) _camPush += ((Vector2)dir).normalized * amt * CamAggr; }
         // Lighter impact frame for crits — quick victim silhouette + screen pop, no full darken.
         void MicroImpact(UnitView v) { if (v == null) return; v.ImpactSilhouette(0.05f); FlashScreen(0.35f); }
@@ -1423,9 +1437,12 @@ namespace MTA.Battle
             Vector2 camOffset = _camPush + shake;
             _stage.anchoredPosition = camOffset;
 
-            float restZoom = _finishedFired ? 1.1f : 1f;   // wide default holds the whole brawl
+            // Rest camera = the roster-framed base zoom; tighten toward the climax and after the win.
+            float restZoom = _baseZoom;
+            if (_finishedFired) restZoom = _baseZoom + 0.12f;
+            else if (_pb.AliveCount(0) + _pb.AliveCount(1) <= 2) restZoom = _baseZoom + 0.14f;   // last-standing close-up
             _zoomTarget = Mathf.Lerp(_zoomTarget, restZoom, 1.6f * Time.deltaTime);
-            float zoomCap = mode == BattleMode.Arena ? 1.35f : 1.12f;   // Brawl holds wide for readability
+            float zoomCap = _baseZoom + (mode == BattleMode.Arena ? 0.30f : 0.16f);   // punches ride above base
             _zoom = Mathf.Clamp(Mathf.Lerp(_zoom, _zoomTarget, 5.5f * Time.deltaTime), 0.9f, zoomCap);
             _stage.localScale = Vector3.one * _zoom;
 

@@ -37,7 +37,7 @@ namespace MTA.Battle
             Theme(element, out var skyTop, out var skyHor, out var mtnCol, out var groundCol, out var floorCol, out var partCol, out var partDir);
             _accent = partCol; _partDir = partDir;
 
-            _root = Panel(parent, "Arena", skyTop, new Vector2(1200, 1700), Vector2.zero);
+            _root = Panel(parent, "Arena", skyTop, new Vector2(1360, 2560), Vector2.zero);   // fills the full portrait screen — no black bands (V1)
             _root.SetAsFirstSibling();
 
             // The forest photo only fits NATURE — using it (tinted) for every element made
@@ -62,11 +62,11 @@ namespace MTA.Battle
             }
             else
             {
-                const int bands = 12;
+                const int bands = 14;
                 for (int i = 0; i < bands; i++)
                 {
                     float f = i / (float)(bands - 1);
-                    Panel(_root, "Sky", Color.Lerp(skyTop, skyHor, f), new Vector2(1200, 165), new Vector2(0, 780 - i * 145));
+                    Panel(_root, "Sky", Color.Lerp(skyTop, skyHor, f), new Vector2(1400, 175), new Vector2(0, 1120 - i * 160));
                 }
                 _far = Layer("Far");
                 var mtn = new Color(mtnCol.r, mtnCol.g, mtnCol.b, 0.9f);
@@ -88,7 +88,8 @@ namespace MTA.Battle
             // Three tone bands (far-dark → near-light) read as a floor you stand ON; a bright
             // near lip marks the front standing edge; element ground features (below) give the
             // surface real identity — lava cracks, shallow water, or grass — with parallax depth.
-            Panel(_root, "Ground", groundCol, new Vector2(1200, 520), new Vector2(0, -700));
+            Panel(_root, "GroundBase", Lift(groundCol, 0.72f), new Vector2(1500, 1400), new Vector2(0, -1120));   // fills the deep bottom so the lower frame is ground, never a black band
+            Panel(_root, "Ground", groundCol, new Vector2(1360, 560), new Vector2(0, -700));
             Panel(_root, "GroundFar",  Lift(groundCol, 0.82f), new Vector2(1340, 320), new Vector2(0, -430));
             Panel(_root, "GroundMid",  Lift(groundCol, 1.12f), new Vector2(1340, 260), new Vector2(0, -235));
             Panel(_root, "GroundNear", Lift(groundCol, 1.42f), new Vector2(1340, 250), new Vector2(0, -55));
@@ -100,7 +101,7 @@ namespace MTA.Battle
 
             // Foreground silhouette layer — darkest, strongest parallax (depth).
             _fore = Layer("Fore");
-            var fg = new Color(groundCol.r * 0.4f, groundCol.g * 0.4f, groundCol.b * 0.4f, 0.96f);
+            var fg = new Color(groundCol.r * 0.58f, groundCol.g * 0.58f, groundCol.b * 0.58f, 0.96f);   // lighter foreground so the lower frame isn't a heavy dead band
             Diamond(_fore, fg, 260, new Vector2(-470, -560));
             Diamond(_fore, fg, 200, new Vector2(430, -580));
             Panel(_fore, "FgBar", fg, new Vector2(1300, 120), new Vector2(0, -690));
@@ -312,22 +313,24 @@ namespace MTA.Battle
         {
             switch (e)
             {
+                // Palettes lifted (V2 grade / V3 parity): brighter skies + higher-contrast ground so
+                // Fire and Water read as vivid as the Nature photo, and fighters sit on a lit stage.
                 case "Fire":
-                    skyTop = new Color(0.18f, 0.06f, 0.05f); skyHor = new Color(0.52f, 0.17f, 0.09f);
-                    mtn = new Color(0.32f, 0.11f, 0.09f); ground = new Color(0.17f, 0.07f, 0.05f);
-                    floor = new Color(0.20f, 0.10f, 0.08f); part = new Color(1f, 0.55f, 0.2f); partDir = 1f; break;    // embers rise
+                    skyTop = new Color(0.36f, 0.13f, 0.10f); skyHor = new Color(0.90f, 0.38f, 0.17f);
+                    mtn = new Color(0.48f, 0.19f, 0.13f); ground = new Color(0.34f, 0.16f, 0.11f);
+                    floor = new Color(0.54f, 0.26f, 0.16f); part = new Color(1f, 0.64f, 0.28f); partDir = 1f; break;    // embers rise
                 case "Water":
-                    skyTop = new Color(0.04f, 0.10f, 0.22f); skyHor = new Color(0.09f, 0.30f, 0.46f);
-                    mtn = new Color(0.10f, 0.21f, 0.36f); ground = new Color(0.06f, 0.11f, 0.18f);
-                    floor = new Color(0.10f, 0.15f, 0.22f); part = new Color(0.5f, 0.8f, 1f); partDir = 0.7f; break;   // bubbles rise
+                    skyTop = new Color(0.10f, 0.28f, 0.50f); skyHor = new Color(0.30f, 0.66f, 0.88f);
+                    mtn = new Color(0.22f, 0.46f, 0.64f); ground = new Color(0.15f, 0.31f, 0.44f);
+                    floor = new Color(0.26f, 0.48f, 0.62f); part = new Color(0.68f, 0.92f, 1f); partDir = 0.7f; break;   // bubbles rise
                 case "Nature":
-                    skyTop = new Color(0.07f, 0.14f, 0.09f); skyHor = new Color(0.17f, 0.33f, 0.17f);
-                    mtn = new Color(0.13f, 0.26f, 0.14f); ground = new Color(0.09f, 0.14f, 0.09f);
-                    floor = new Color(0.13f, 0.19f, 0.11f); part = new Color(0.55f, 0.9f, 0.45f); partDir = -1f; break; // leaves fall
+                    skyTop = new Color(0.11f, 0.23f, 0.14f); skyHor = new Color(0.31f, 0.56f, 0.31f);
+                    mtn = new Color(0.19f, 0.36f, 0.19f); ground = new Color(0.16f, 0.24f, 0.14f);
+                    floor = new Color(0.22f, 0.33f, 0.17f); part = new Color(0.62f, 0.96f, 0.5f); partDir = -1f; break; // leaves fall
                 default:
-                    skyTop = new Color(0.10f, 0.12f, 0.22f); skyHor = new Color(0.28f, 0.17f, 0.26f);
-                    mtn = new Color(0.17f, 0.16f, 0.27f); ground = new Color(0.11f, 0.10f, 0.13f);
-                    floor = new Color(0.22f, 0.20f, 0.26f); part = new Color(0.7f, 0.7f, 0.85f); partDir = 0.5f; break;
+                    skyTop = new Color(0.17f, 0.19f, 0.32f); skyHor = new Color(0.44f, 0.31f, 0.44f);
+                    mtn = new Color(0.28f, 0.26f, 0.40f); ground = new Color(0.20f, 0.18f, 0.24f);
+                    floor = new Color(0.36f, 0.32f, 0.42f); part = new Color(0.82f, 0.82f, 0.96f); partDir = 0.5f; break;
             }
         }
 
@@ -358,16 +361,30 @@ namespace MTA.Battle
             switch (e)
             {
                 case "Fire":
-                    var rock = new Color(0.20f, 0.09f, 0.07f, 1f);
-                    Cone(_biome, rock, 430, new Vector2(-250, -300));
-                    Cone(_biome, rock, 360, new Vector2(300, -330));
-                    Blob(_biome, new Color(1f, 0.5f, 0.16f, 0.8f), 70, new Vector2(-250, -110));   // glowing crater
-                    Blob(_biome, new Color(1f, 0.6f, 0.2f, 0.7f), 48, new Vector2(300, -175));
+                    // Layered volcanic ridge + a hazy horizon glow for real depth/atmosphere (V3 parity).
+                    var fglow = Panel(_biome, "FireGlow", new Color(1f, 0.5f, 0.18f, 0.5f), new Vector2(1500, 560), new Vector2(0, -170));
+                    fglow.GetComponent<Image>().sprite = ProceduralArt.Glow();
+                    var rockFar = new Color(0.34f, 0.15f, 0.11f, 1f);
+                    var rock = new Color(0.26f, 0.11f, 0.09f, 1f);
+                    Cone(_biome, rockFar, 540, new Vector2(-110, -330));   // far ridge behind
+                    Cone(_biome, rockFar, 480, new Vector2(360, -350));
+                    Cone(_biome, rock, 440, new Vector2(-250, -300));      // near cones
+                    Cone(_biome, rock, 370, new Vector2(300, -330));
+                    Blob(_biome, new Color(1f, 0.64f, 0.24f, 0.92f), 88, new Vector2(-250, -105));   // glowing craters (brighter)
+                    Blob(_biome, new Color(1f, 0.72f, 0.3f, 0.82f), 60, new Vector2(300, -170));
+                    Panel(_biome, "Run", new Color(1f, 0.46f, 0.14f, 0.72f), new Vector2(11, 160), new Vector2(-250, -205));   // lava runs down the flanks
+                    Panel(_biome, "Run", new Color(1f, 0.5f, 0.16f, 0.72f), new Vector2(9, 120), new Vector2(300, -245));
                     break;
                 case "Water":
-                    Panel(_biome, "Sea", new Color(0.10f, 0.30f, 0.50f, 0.92f), new Vector2(1360, 210), new Vector2(0, -300));
-                    for (int i = 0; i < 4; i++)
-                        Panel(_biome, "Wave", new Color(0.6f, 0.85f, 1f, 0.22f), new Vector2(1220, 8), new Vector2(0, -230 - i * 34));
+                    // Sun + bright horizon haze + deeper sea bands + glinting reflection (V3 parity).
+                    var sun = Panel(_biome, "Sun", new Color(1f, 0.95f, 0.78f, 0.6f), new Vector2(330, 330), new Vector2(-250, 470));   // high in the sky, clear of the fighters
+                    sun.GetComponent<Image>().sprite = ProceduralArt.Glow();
+                    Panel(_biome, "Haze", new Color(0.55f, 0.82f, 1f, 0.4f), new Vector2(1500, 150), new Vector2(0, -150));
+                    Panel(_biome, "Sea", new Color(0.16f, 0.42f, 0.64f, 0.95f), new Vector2(1500, 250), new Vector2(0, -300));
+                    for (int i = 0; i < 5; i++)
+                        Panel(_biome, "Wave", new Color(0.72f, 0.9f, 1f, 0.28f), new Vector2(1360, 9), new Vector2(0, -228 - i * 34));
+                    var glint = Panel(_biome, "Glint", new Color(1f, 0.98f, 0.86f, 0.42f), new Vector2(140, 96), new Vector2(-250, -250));
+                    glint.GetComponent<Image>().sprite = ProceduralArt.Glow();
                     break;
                 case "Nature":
                     var tree = new Color(0.10f, 0.22f, 0.11f, 0.95f);
