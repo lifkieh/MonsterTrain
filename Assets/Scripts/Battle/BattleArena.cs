@@ -101,10 +101,11 @@ namespace MTA.Battle
 
             // Foreground silhouette layer — darkest, strongest parallax (depth).
             _fore = Layer("Fore");
-            var fg = new Color(groundCol.r * 0.58f, groundCol.g * 0.58f, groundCol.b * 0.58f, 0.96f);   // lighter foreground so the lower frame isn't a heavy dead band
-            Diamond(_fore, fg, 260, new Vector2(-470, -560));
-            Diamond(_fore, fg, 200, new Vector2(430, -580));
-            Panel(_fore, "FgBar", fg, new Vector2(1300, 120), new Vector2(0, -690));
+            var fg = new Color(groundCol.r * 0.66f, groundCol.g * 0.66f, groundCol.b * 0.66f, 0.96f);   // lighter foreground so the lower frame isn't a heavy dead band
+            Diamond(_fore, fg, 240, new Vector2(-470, -600));
+            Diamond(_fore, fg, 190, new Vector2(430, -620));
+            Panel(_fore, "FgBar", fg, new Vector2(1360, 74), new Vector2(0, -740));           // thinner, lower — less dead slab
+            Panel(_fore, "FgEdge", Lift(fg, 1.35f), new Vector2(1360, 5), new Vector2(0, -703));   // faint top edge catches light
 
             // Water gets a drifting mist band; other elements skip it.
             if (element == "Water")

@@ -206,7 +206,12 @@ namespace MTA.Battle
             float scy = sq.y * (1f + ay - ax * 0.5f);
             float rot;
             if (_spinT > 0f) { _spinT -= dt; _spinAngle += _spinSpeed * dt; rot = _spinAngle; }
-            else { _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt); rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f * _weight, -16f, 16f) * _mirror; }   // heavier bodies lean harder into motion
+            else
+            {
+                _spinAngle = Mathf.Lerp(_spinAngle, 0f, 10f * dt);
+                float idleSway = Mathf.Sin(Time.time * 0.9f + _lastPos.x * 0.02f) * 2.4f * _roamFactor;   // gentle at-rest sway (liveliness)
+                rot = _spinAngle + Mathf.Clamp(-_vel.x * 0.02f * _weight, -16f, 16f) * _mirror + idleSway;   // heavier bodies lean harder into motion
+            }
             rot += _extraTilt; _extraTilt = Mathf.MoveTowards(_extraTilt, 0f, 120f * dt);   // hit head-snap settles
             Vector2 vib = Vector2.zero;
             if (_vibT > 0f) { _vibT -= dt; float tt = Time.time; vib = new Vector2(Mathf.Sin(tt * 90f) * _vibMag, Mathf.Cos(tt * 78f) * _vibMag * 0.5f); }
@@ -281,9 +286,13 @@ namespace MTA.Battle
             float t = Time.time;
             // Weight sell: light monsters bounce fast + springy, heavy ones plod slow + settled.
             float light = Mathf.Lerp(1.28f, 0.72f, Mathf.InverseLerp(0.6f, 1.6f, _weight));
-            float bob = (_victory ? 12f : 4f) * (_victory ? 1f : light);
-            Vector2 idle = new Vector2(0, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.2f * light) + _basePos.x * 0.01f)) * bob);
-            float breathe = 1f + Mathf.Sin(t * 3f * light + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.03f * light);
+            float ph = _basePos.x * 0.013f + _basePos.y * 0.017f;
+            float bob = (_victory ? 12f : 5f) * (_victory ? 1f : light);
+            // Idle weight-shift: a slow side-to-side step so a static single-frame sprite still reads
+            // ALIVE (never a planted statue). Blended out the moment combat claims the unit. (V4 liveliness)
+            float step = _victory ? 0f : Mathf.Sin(t * 1.15f * light + ph) * 3.2f * light;
+            Vector2 idle = new Vector2(step, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * light) + ph)) * bob);
+            float breathe = 1f + Mathf.Sin(t * 3f * light + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.045f * light);
             Vector2 animOff = Vector2.zero; float animScale = 1f;
             Color flashC = new Color(1f, 1f, 1f, 0f);
 

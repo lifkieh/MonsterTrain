@@ -46,6 +46,19 @@ namespace MTA.Battle
             bool ko = kind == ElemFx.KO;
             float u = ko ? 2.2f : kind == ElemFx.Ultimate ? 1.7f : kind == ElemFx.Cast ? 0.9f : 1f;   // energy scale
             ElemFx ek = ko ? ElemFx.Ultimate : kind;   // element methods treat KO as an ultimate-scale burst
+
+            // Bloom halo (V4): a bright element-tinted glow UNDER the shaped particles on the big
+            // beats — approximates additive bloom without a runtime shader (player-safe). Drawn first
+            // so the signature shapes stay on top and readable.
+            if (ko || kind == ElemFx.Ultimate || kind == ElemFx.Impact)
+            {
+                var a = Accent(element);
+                var glow = new Color(Mathf.Min(1f, a.r + 0.32f), Mathf.Min(1f, a.g + 0.32f), Mathf.Min(1f, a.b + 0.32f),
+                                     ko ? 0.72f : kind == ElemFx.Ultimate ? 0.62f : 0.42f);
+                Emit(ProceduralArt.Glow(), pos, size * (ko ? 2.0f : kind == ElemFx.Ultimate ? 1.65f : 1.05f),
+                     Vector2.zero, 0f, 0.4f, 1.55f, ko ? 0.5f : 0.34f, 0f, 1, glow);
+            }
+
             switch (Norm(element, kind))
             {
                 case "Fire":    Fire(pos, size, u, ek); break;

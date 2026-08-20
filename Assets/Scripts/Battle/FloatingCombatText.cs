@@ -29,7 +29,7 @@ namespace MTA.Battle
 
     public class FloatingCombatText : MonoBehaviour
     {
-        Text _t; RectTransform _rt; float _age, _life; Vector2 _start; bool _active, _crit; Color _baseColor;
+        Text _t; RectTransform _rt; float _age, _life; Vector2 _start; bool _active, _crit; Color _baseColor; float _startScale = 1.4f;
         Action<FloatingCombatText> _onDone;
 
         public static FloatingCombatText Create(RectTransform parent, Font font)
@@ -43,6 +43,10 @@ namespace MTA.Battle
             f._t.font = font; f._t.alignment = TextAnchor.MiddleCenter; f._t.fontStyle = FontStyle.Bold;
             f._t.horizontalOverflow = HorizontalWrapMode.Overflow; f._t.verticalOverflow = VerticalWrapMode.Overflow;
             f._t.raycastTarget = false;
+            // Weight (V4): dark outline so numbers read against bright VFX + give crits/ults heft.
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            outline.effectDistance = new Vector2(2.4f, -2.4f);
             go.SetActive(false);
             return f;
         }
@@ -55,7 +59,8 @@ namespace MTA.Battle
             _start = pos; _rt.anchoredPosition = pos;
             _t.text = text; _baseColor = color; _t.color = color; _t.fontSize = size;
             _age = 0; _life = Mathf.Max(0.2f, life); _crit = crit; _onDone = onDone; _active = true;
-            _rt.localScale = Vector3.one * 1.4f;
+            _startScale = crit ? 1.85f : 1.35f;   // crits/ults punch in bigger (weight hierarchy)
+            _rt.localScale = Vector3.one * _startScale;
             gameObject.SetActive(true);
             transform.SetAsLastSibling();
         }
@@ -65,7 +70,7 @@ namespace MTA.Battle
             if (!_active) return;
             _age += Time.deltaTime;
             float p = _age / _life;
-            float pop = Mathf.Lerp(1.4f, 1f, Mathf.Clamp01(_age / 0.15f));   // pop-in scale
+            float pop = Mathf.Lerp(_startScale, 1f, Mathf.Clamp01(_age / 0.15f));   // pop-in scale
             float shakeX = _crit ? Mathf.Sin(_age * 70f) * 3f * (1f - p) : 0f;
             _rt.localScale = Vector3.one * pop;
             _rt.anchoredPosition = _start + new Vector2(shakeX, 60f * p);      // rise ~60 px

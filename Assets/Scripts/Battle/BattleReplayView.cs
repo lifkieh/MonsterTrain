@@ -78,11 +78,13 @@ namespace MTA.Battle
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
         RectTransform _root, _stage, _hud; Font _font; FloatingTextPool _texts; BattleFx _fx; BattleArena _arena; VfxPool _vfx; ElementVfx _elem;
-        readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();
+        readonly List<Image> _pips0 = new List<Image>(), _pips1 = new List<Image>();       // pip frames
+        readonly List<Image> _port0 = new List<Image>(), _port1 = new List<Image>();       // pip portraits
         Dictionary<string, AttackStyle> _styleMap;
         double _clock, _simPerReal; bool _playing, _finishedFired;
         float _shakeT, _shakeDur = 0.25f, _shakeMag, _zoom = 1f, _zoomTarget = 1f, _hitstop;
         float _baseZoom = 1f;   // dynamic rest zoom: framed by roster size so 1v1 is hero-sized and 3v3 isn't miniature (V1)
+        float _lastShockwaveT = -1f;   // min-interval gate so concentric rings don't stack into a screen-filling mess (V4)
         Vector2 _camPush;   // directional camera language on big hits
         float _slowmo = 1f, _slowmoT;
         Image _screenFlash; float _flashT;
@@ -468,10 +470,45 @@ namespace MTA.Battle
             _hud = go.GetComponent<RectTransform>(); _hud.SetParent(_root, false); _hud.SetAsLastSibling();
             _hud.anchorMin = _hud.anchorMax = new Vector2(0.5f, 0.5f);
             _hud.sizeDelta = new Vector2(1080, 120); _hud.anchoredPosition = new Vector2(0, 740);
-            _pips0.Clear(); _pips1.Clear();
+            _pips0.Clear(); _pips1.Clear(); _port0.Clear(); _port1.Clear();
             HudLabel("VS", 40, Vector2.zero, new Vector2(200, 70));
-            for (int i = 0; i < CountTeam(0); i++) _pips0.Add(Pip(new Vector2(-160 - i * 74, 0)));
-            for (int i = 0; i < CountTeam(1); i++) _pips1.Add(Pip(new Vector2(160 + i * 74, 0)));
+            var sp0 = TeamSpecies(0); var sp1 = TeamSpecies(1);
+            for (int i = 0; i < sp0.Count; i++) AddPip(0, new Vector2(-150 - i * 82, 0), sp0[i]);
+            for (int i = 0; i < sp1.Count; i++) AddPip(1, new Vector2(150 + i * 82, 0), sp1[i]);
+        }
+
+        List<string> TeamSpecies(int team)
+        {
+            var list = new List<string>();
+            var units = _pb.Units;
+            for (int slot = 0; slot < 6; slot++)
+                for (int i = 0; i < units.Count; i++)
+                    if (units[i].team == team && units[i].slot == slot) { list.Add(units[i].speciesId); break; }
+            return list;
+        }
+
+        // Framed portrait chip (V4 backlog): team-coloured rounded frame + dark inset + the monster's
+        // portrait. Beats a flat square — the top HUD now shows WHO is on each side. Dead → dims.
+        void AddPip(int team, Vector2 pos, string species)
+        {
+            Color frameCol = team == 0 ? new Color(0.32f, 0.6f, 1f) : new Color(1f, 0.42f, 0.36f);
+            var chip = new GameObject("Pip", typeof(RectTransform), typeof(Image));
+            var rt = chip.GetComponent<RectTransform>(); rt.SetParent(_hud, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = new Vector2(64, 64); rt.anchoredPosition = pos;
+            var frame = chip.GetComponent<Image>(); frame.sprite = ProceduralArt.RoundedRect(); frame.color = frameCol; frame.raycastTarget = false;
+
+            var inset = new GameObject("In", typeof(RectTransform), typeof(Image));
+            var irt = inset.GetComponent<RectTransform>(); irt.SetParent(rt, false); irt.anchorMin = irt.anchorMax = new Vector2(0.5f, 0.5f); irt.sizeDelta = new Vector2(54, 54); irt.anchoredPosition = Vector2.zero;
+            var ii = inset.GetComponent<Image>(); ii.sprite = ProceduralArt.RoundedRect(); ii.color = new Color(0.09f, 0.10f, 0.13f, 1f); ii.raycastTarget = false;
+
+            var pg = new GameObject("Port", typeof(RectTransform), typeof(Image));
+            var prt = pg.GetComponent<RectTransform>(); prt.SetParent(rt, false); prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f); prt.sizeDelta = new Vector2(52, 52); prt.anchoredPosition = new Vector2(0, 2);
+            var pi = pg.GetComponent<Image>(); pi.preserveAspect = true; pi.raycastTarget = false;
+            var portrait = MonsterVisual.For(species, false);
+            if (portrait != null) { pi.sprite = portrait; pi.color = Color.white; } else pi.enabled = false;
+
+            (team == 0 ? _pips0 : _pips1).Add(frame);
+            (team == 0 ? _port0 : _port1).Add(pi);
         }
 
         Text HudLabel(string s, int size, Vector2 pos, Vector2 sz)
@@ -485,27 +522,25 @@ namespace MTA.Battle
             return t;
         }
 
-        Image Pip(Vector2 pos)
-        {
-            var go = new GameObject("Pip", typeof(RectTransform), typeof(Image));
-            var rt = go.GetComponent<RectTransform>(); rt.SetParent(_hud, false);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.sizeDelta = new Vector2(50, 50); rt.anchoredPosition = pos;
-            var img = go.GetComponent<Image>(); img.raycastTarget = false; return img;
-        }
-
         int CountTeam(int t) { int n = 0; foreach (var u in _pb.Units) if (u.team == t) n++; return n; }
 
         void UpdatePips()
         {
-            SetPipRow(_pips0, 0, new Color(0.32f, 0.6f, 1f));
-            SetPipRow(_pips1, 1, new Color(1f, 0.42f, 0.36f));
+            SetPipRow(_pips0, _port0, 0, new Color(0.32f, 0.6f, 1f));
+            SetPipRow(_pips1, _port1, 1, new Color(1f, 0.42f, 0.36f));
         }
 
-        void SetPipRow(List<Image> pips, int team, Color live)
+        void SetPipRow(List<Image> pips, List<Image> ports, int team, Color live)
         {
             int alive = _pb.AliveCount(team);
-            var dead = new Color(0.2f, 0.2f, 0.24f, 0.85f);
-            for (int i = 0; i < pips.Count; i++) if (pips[i] != null) pips[i].color = i < alive ? live : dead;
+            var deadFrame = new Color(0.22f, 0.22f, 0.26f, 0.9f);
+            var deadPort = new Color(0.35f, 0.35f, 0.4f, 0.55f);
+            for (int i = 0; i < pips.Count; i++)
+            {
+                bool on = i < alive;
+                if (pips[i] != null) pips[i].color = on ? live : deadFrame;
+                if (i < ports.Count && ports[i] != null && ports[i].enabled) ports[i].color = on ? Color.white : deadPort;
+            }
         }
 
         void Update()
@@ -742,7 +777,7 @@ namespace MTA.Battle
                 // 1) ANTICIPATION + DASH IN (squash-crouch, dash with afterimages, land overshoot)
                 A.Squash(1.10f, 0.85f, 0.07f);
                 yield return new WaitForSecondsRealtime(0.05f / sp);
-                _vfx.Play("speedlines", A.BasePos + dir * 40f, 210f, new Color(1f, 1f, 1f, 0.9f)); AudioManager.Play(Sfx.Whoosh);
+                _vfx.Play("speedlines", A.BasePos + dir * 40f, 150f, new Color(1f, 1f, 1f, 0.32f)); AudioManager.Play(Sfx.Whoosh);   // faint motion blur (V4: was a solid barcode box)
                 yield return MoveOffset(A, Vector2.zero, close, 0.10f / sp, true, gtint);
                 A.Squash(0.9f, 1.12f, 0.06f);
                 Shake(4f);
@@ -787,8 +822,7 @@ namespace MTA.Battle
 
                 // 5) SLAM DOWN (spike — spin down, tiered freeze, impact frame on ultimate)
                 AudioManager.Impact(ult, true, _hudRng.Range(0.9f, 1.1f));
-                _texts.Spawn(T.BasePos + new Vector2(0, 34), "SLAM!", COrange, 32);
-                T.Spin(900f, 0.16f);
+                T.Spin(900f, 0.16f);   // (V4: dropped the redundant "SLAM!" banner — LAUNCH + crit word already read)
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
                 _elem.Burst(Elem(actorSp), T.BasePos, ult ? 320f : 230f, ult ? ElemFx.Ultimate : ElemFx.Impact);   // element signature on the slam
@@ -1186,7 +1220,7 @@ namespace MTA.Battle
             {
                 case FillerKind.Whiff:
                     v.PlayAttack(dir, 32f, false);
-                    _vfx.Play("speedlines", v.BasePos + dir * 40f, 120f, new Color(1f, 1f, 1f, 0.5f));
+                    _vfx.Play("speedlines", v.BasePos + dir * 40f, 110f, new Color(1f, 1f, 1f, 0.28f));
                     AudioManager.Play(Sfx.Hover);
                     break;
                 case FillerKind.Block:
@@ -1337,6 +1371,8 @@ namespace MTA.Battle
 
         IEnumerator Shockwave(Vector2 pos, Color col)
         {
+            if (Time.time - _lastShockwaveT < 0.16f) yield break;   // don't stack concentric rings at a multi-hit clash (V4)
+            _lastShockwaveT = Time.time;
             var go = new GameObject("Shock", typeof(RectTransform), typeof(Image));
             var rt = go.GetComponent<RectTransform>(); rt.SetParent(_stage, false);
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f); rt.anchoredPosition = pos; rt.sizeDelta = new Vector2(60, 60);
