@@ -216,7 +216,20 @@ namespace MTA.Battle
             if (_ghostHold > 0f) _ghostHold -= dt;
             else _delayFrac = Mathf.MoveTowards(_delayFrac, _dispFrac, 1.4f * dt);
             if (_delayFrac < _dispFrac) _delayFrac = _dispFrac;           // heal: ghost snaps up
-            if (_hpFill != null) { _hpFill.fillAmount = _dispFrac; _hpFill.color = _dispFrac > 0.5f ? new Color(0.3f, 0.9f, 0.3f) : _dispFrac > 0.25f ? new Color(0.95f, 0.8f, 0.2f) : new Color(0.95f, 0.3f, 0.25f); }
+            if (_hpFill != null)
+            {
+                _hpFill.fillAmount = _dispFrac;
+                if (_dispFrac > 0.5f) _hpFill.color = new Color(0.3f, 0.9f, 0.3f);
+                else if (_dispFrac > 0.25f) _hpFill.color = new Color(0.95f, 0.8f, 0.2f);
+                else
+                {
+                    // Near-death danger pulse — instant "this one is about to die" read (readability target).
+                    float pulse = 0.5f + 0.5f * Mathf.Abs(Mathf.Sin(Time.time * 7f));
+                    _hpFill.color = new Color(1f, 0.16f * pulse, 0.12f * pulse);
+                    if (_barGroup != null) _barGroup.alpha = 0.75f + 0.25f * pulse;   // whole bar throbs
+                }
+            }
+            else if (_barGroup != null && !_dead) _barGroup.alpha = 1f;
             if (_hpDelayed != null) _hpDelayed.fillAmount = _delayFrac;
 
             if (_spawnT < 1f) _spawnT = Mathf.Min(1f, _spawnT + dt / 0.3f);
