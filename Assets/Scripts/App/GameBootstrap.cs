@@ -251,7 +251,10 @@ namespace MTA.App
             MTA.Battle.AudioManager.PlayMusic(won ? MTA.Battle.Music.Victory : MTA.Battle.Music.Defeat);
             if (!won) MTA.Battle.AudioManager.Play(MTA.Battle.Sfx.Defeat);
 
-            _resultBanner.text = (won ? "VICTORY" : "DEFEAT") + (d != null ? "\n" + d.bannerTitle : "");
+            // bannerTitle is phrased from the WINNER's side ("Clutch Victory"), so on a loss it
+            // must not be shown verbatim (that read as "DEFEAT / Clutch Victory"). Use a loss line.
+            string flavor = d == null ? "" : (won ? d.bannerTitle : LossFlavor(d.tier));
+            _resultBanner.text = (won ? "VICTORY" : "DEFEAT") + (flavor != "" ? "\n" + flavor : "");
             _resultBanner.color = won ? new Color(0.4f, 1f, 0.4f) : new Color(1f, 0.5f, 0.5f);
             _resultStats.text = d == null ? "" :
                 "Winner: " + (d.winnerTeam == 0 ? "You" : "Enemy") + "\n" +
@@ -1257,6 +1260,18 @@ namespace MTA.App
         {
             _ctrl.Session.tagMode = !_ctrl.Session.tagMode;
             RefreshSelect();
+        }
+
+        // Loss flavor from the ENEMY's win tier (so DEFEAT never reads a victory subtitle).
+        static string LossFlavor(WinTier t)
+        {
+            switch (t)
+            {
+                case WinTier.DominantWin: return "Crushed";
+                case WinTier.AdvantageWin: return "Outmatched";
+                case WinTier.CloseWin: return "Close Loss";
+                default: return "So Close...";   // ClutchWin
+            }
         }
 
         void RefreshSelect()

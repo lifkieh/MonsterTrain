@@ -40,8 +40,13 @@ namespace MTA.Battle
             _root = Panel(parent, "Arena", skyTop, new Vector2(1200, 1700), Vector2.zero);
             _root.SetAsFirstSibling();
 
-            // Real CC0 forest panorama backdrop, tinted per element; procedural fallback.
-            var backdrop = Resources.Load<Texture2D>("Arena/forest");
+            // The forest photo only fits NATURE — using it (tinted) for every element made
+            // Fire/Water read as "a forest with a colour filter". So the photo backdrop is now
+            // Nature/default only; Fire and Water build a procedural element sky (gradient bands
+            // + far mountains) which, with their distinct biome silhouettes + ground features
+            // below, actually read as lava / sea rather than a tinted forest.
+            bool useForest = element != "Fire" && element != "Water";
+            var backdrop = useForest ? Resources.Load<Texture2D>("Arena/forest") : null;
             if (backdrop != null)
             {
                 var go = new GameObject("Backdrop", typeof(RectTransform), typeof(RawImage));
