@@ -14,6 +14,7 @@ namespace MTA.Meta
         public Dictionary<string, int> playerLevels;   // per-species level for the player team (null = fixed Level)
         public int enemyLevel = Level;                 // enemy team level (career scales this)
         public int careerStageIndex = -1;              // >=0 while fighting a career stage, else casual
+        public bool tagMode;                           // true = tag/1v1 rotation battle (session only, not saved)
         public int matchSeed;
         public BattleResult lastResult;
 

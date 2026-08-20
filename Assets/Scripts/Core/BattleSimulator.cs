@@ -14,8 +14,13 @@ namespace MTA.Core
     //   3. Hard-resolve coin flip (only if everything else ties).
     public static class BattleSimulator
     {
+        // tagMode (opt-in): only the front-living monster of each team fights; the next slot
+        // "tags in" when the front dies (reserves genuinely idle + safe until their turn).
+        // Default false leaves the brawl path byte-identical (determinism/hash unchanged) —
+        // it only re-times which units act; targeting already resolves to the front by the
+        // lower-slot tie-break, so reserves are never hit while benched.
         public static BattleResult Run(TeamConfig a, TeamConfig b, int seed,
-            BalanceConfig cfg, SpeciesRegistry registry)
+            BalanceConfig cfg, SpeciesRegistry registry, bool tagMode = false)
         {
             a.Validate(); b.Validate();
             var rng = new Random(seed);
@@ -24,8 +29,9 @@ namespace MTA.Core
 
             BuildTeam(a, 0, state.teamA, seed, rng, cfg, registry);
             BuildTeam(b, 1, state.teamB, seed, rng, cfg, registry);
+            if (tagMode) { BenchReserves(state.teamA); BenchReserves(state.teamB); }   // only the front acts
             log.Add(new BattleEvent { t = 0, kind = "Start",
-                extra = state.teamA.Count + "v" + state.teamB.Count + ";seed=" + seed });
+                extra = state.teamA.Count + "v" + state.teamB.Count + ";seed=" + seed + (tagMode ? ";tag" : "") });
             // Per-unit spawn events carry maxHp + species so the view can replay
             // HP bars from the log alone (log is the only sim->view contract).
             EmitSpawns(state.teamA, log);
@@ -55,10 +61,12 @@ namespace MTA.Core
                 foreach (var u in state.teamB) u.PurgeExpired(state.clock);
 
                 int skillIndex = ChooseSkill(actor, state, cfg);
-                var killed = SkillResolver.Resolve(actor, skillIndex, state, cfg, rng, log);
+                var killed = SkillResolver.Resolve(actor, skillIndex, state, cfg, rng, log, tagMode);
                 foreach (var dead in killed)
                     log.Add(new BattleEvent { t = state.clock, kind = "Died",
                         targetTeam = dead.team, targetSlot = dead.slot });
+
+                if (tagMode && killed.Count > 0) TagPromote(state, cfg);   // a front fell → next slot tags in
 
                 if (skillIndex == 1)
                     actor.cooldownReadyAt[1] = state.clock + actor.skills[1].cooldownSeconds;
@@ -144,6 +152,26 @@ namespace MTA.Core
             for (int i = 0; i < 4; i++)
                 h = (h ^ (byte)(v >> (i * 8))) * prime;
             return h;
+        }
+
+        // Tag mode: park every non-front unit's action clock at +inf so the timeline never
+        // picks it (targeting still ignores them because the front is always the lowest slot).
+        static void BenchReserves(List<CombatUnit> team)
+        {
+            int frontSlot = int.MaxValue;
+            for (int i = 0; i < team.Count; i++) if (team[i].Alive && team[i].slot < frontSlot) frontSlot = team[i].slot;
+            for (int i = 0; i < team.Count; i++) if (team[i].slot != frontSlot) team[i].nextActionTime = double.MaxValue;
+        }
+
+        // Tag mode: whenever a team's front dies, give the newly-promoted front a live action
+        // clock (it was benched at +inf) so it enters the fight from the current moment.
+        static void TagPromote(BattleState s, BalanceConfig cfg) { PromoteFront(s.teamA, s, cfg); PromoteFront(s.teamB, s, cfg); }
+        static void PromoteFront(List<CombatUnit> team, BattleState s, BalanceConfig cfg)
+        {
+            CombatUnit front = null;
+            for (int i = 0; i < team.Count; i++) if (team[i].Alive && (front == null || team[i].slot < front.slot)) front = team[i];
+            if (front != null && front.nextActionTime == double.MaxValue)
+                front.nextActionTime = s.clock + StatMath.ActionInterval(front.EffectiveStat(Stat.SPD), cfg);
         }
 
         static void EmitSpawns(List<CombatUnit> team, List<BattleEvent> log)

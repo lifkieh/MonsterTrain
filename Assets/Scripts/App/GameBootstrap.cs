@@ -47,7 +47,7 @@ namespace MTA.App
         List<string> _roster, _obtainable;
         List<string> _lastTeam = new List<string>();
         bool _hadSave;
-        Button _startBtn, _muteBtn;
+        Button _startBtn, _muteBtn, _modeBtn;
         BattleReplayView _view;
         Dictionary<string, SkillSlot> _slotMap;
         Dictionary<string, AttackStyle> _atkStyles;
@@ -1174,6 +1174,8 @@ namespace MTA.App
                 _speciesButtons[id] = b;
             }
 
+            _modeBtn = UIFactory.Button(_select, "MODE:  BRAWL", new Vector2(0, -560), new Vector2(440, 92), _font, ToggleBattleMode);
+            UIFactory.SetButtonColor(_modeBtn, new Color(0.35f, 0.4f, 0.6f));
             _startBtn = UIFactory.Button(_select, "START BATTLE", new Vector2(0, -820), new Vector2(520, 110),
                 _font, OnStartBattle);
             UIFactory.Label(_select, "Pick 1-3 monsters   ·   1v1 / 2v2 / 3v3", 24, new Vector2(0, 636), new Vector2(760, 40), _font)
@@ -1250,6 +1252,13 @@ namespace MTA.App
             RefreshSelect();
         }
 
+        // Brawl (all fight at once) vs Tag (only the front fights; next tags in on death).
+        void ToggleBattleMode()
+        {
+            _ctrl.Session.tagMode = !_ctrl.Session.tagMode;
+            RefreshSelect();
+        }
+
         void RefreshSelect()
         {
             int pc = _ctrl.Session.playerTeam.Count;
@@ -1263,6 +1272,13 @@ namespace MTA.App
                     : picked ? new Color(0.2f, 0.75f, 0.35f) : new Color(0.2f, 0.55f, 0.95f));
             }
             if (_startBtn != null) _startBtn.interactable = _ctrl.CanStartBattle;
+            if (_modeBtn != null)
+            {
+                bool tag = _ctrl.Session.tagMode;
+                var mt = _modeBtn.GetComponentInChildren<Text>();
+                if (mt != null) mt.text = tag ? "MODE:  TAG (rotate)" : "MODE:  BRAWL (all)";
+                UIFactory.SetButtonColor(_modeBtn, tag ? new Color(0.6f, 0.4f, 0.7f) : new Color(0.35f, 0.4f, 0.6f));
+            }
         }
 
         Dictionary<string, int> BuildLevelMap()
@@ -1285,7 +1301,7 @@ namespace MTA.App
             _view.rarities = _rarities;                   // VS-screen rarity stars
             int csi = _ctrl.Session.careerStageIndex;     // boss music on each league-finale stage
             _view.bossMusic = csi >= 0 && (csi + 1) % Career.PerLeague == 0;
-            _view.mode = _view.bossMusic ? MTA.Battle.BattleMode.Arena : MTA.Battle.BattleMode.Brawl;   // boss/finale = duel showcase, else brawl
+            _view.mode = (_view.bossMusic || _ctrl.Session.tagMode) ? MTA.Battle.BattleMode.Arena : MTA.Battle.BattleMode.Brawl;   // boss/finale or tag = duel showcase, else brawl
             _view.Play(result, replay, _atkStyles, _battle, _font);
         }
 

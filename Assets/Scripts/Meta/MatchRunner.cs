@@ -38,7 +38,7 @@ namespace MTA.Meta
         {
             var a = BuildLeveled(s.playerTeam, s.playerLevels, GameSession.Level);
             var b = Build(s.enemyTeam, s.enemyLevel);
-            s.lastResult = BattleSimulator.Run(a, b, s.matchSeed, cfg, reg);
+            s.lastResult = BattleSimulator.Run(a, b, s.matchSeed, cfg, reg, s.tagMode);
             return s.lastResult;
         }
 

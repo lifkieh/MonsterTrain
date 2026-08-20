@@ -24,7 +24,7 @@ namespace MTA.Core
         // Emits events; returns units killed this action. Crit RNG is consumed
         // ONLY for Damage effects, in resolution order (RNG contract).
         public static List<CombatUnit> Resolve(CombatUnit actor, int skillIndex,
-            BattleState s, BalanceConfig cfg, Random rng, List<BattleEvent> log)
+            BattleState s, BalanceConfig cfg, Random rng, List<BattleEvent> log, bool tagMode = false)
         {
             var skill = actor.skills[skillIndex];
             var killed = new List<CombatUnit>();
@@ -33,7 +33,10 @@ namespace MTA.Core
             {
                 case EffectKind.Damage:
                 {
-                    var target = skillIndex == 0
+                    // Tag mode: the ONLY valid enemy is the front-living one (reserves are off
+                    // the field), so skill-target "lowest HP" must not reach across to a benched
+                    // reserve that happens to have a smaller max-HP roll.
+                    var target = (tagMode || skillIndex == 0)
                         ? TargetSelector.FrontMost(s.Enemies(actor.team))
                         : TargetSelector.LowestHpEnemy(s.Enemies(actor.team));
                     if (target == null) break;
@@ -82,7 +85,7 @@ namespace MTA.Core
                 case EffectKind.Buff:
                 case EffectKind.Debuff:
                 {
-                    var targets = SelectModifierTargets(actor, skill, s);
+                    var targets = SelectModifierTargets(actor, skill, s, tagMode);
                     float sign = skill.effect == EffectKind.Buff ? 1f : -1f;
                     for (int i = 0; i < targets.Count; i++)
                     {
@@ -103,7 +106,7 @@ namespace MTA.Core
             return killed;
         }
 
-        static List<CombatUnit> SelectModifierTargets(CombatUnit actor, SkillData skill, BattleState s)
+        static List<CombatUnit> SelectModifierTargets(CombatUnit actor, SkillData skill, BattleState s, bool tagMode)
         {
             var list = new List<CombatUnit>();
             switch (skill.targetRule)
@@ -117,8 +120,9 @@ namespace MTA.Core
                     var ally = TargetSelector.MostInjuredAlly(s.Team(actor.team));
                     list.Add(ally ?? actor);      // nobody injured -> self
                     break;
-                default:                          // Enemy (debuffs)
-                    var enemy = TargetSelector.LowestHpEnemy(s.Enemies(actor.team));
+                default:                          // Enemy (debuffs) — tag mode restricts to the front
+                    var enemy = tagMode ? TargetSelector.FrontMost(s.Enemies(actor.team))
+                                        : TargetSelector.LowestHpEnemy(s.Enemies(actor.team));
                     if (enemy != null) list.Add(enemy);
                     break;
             }
