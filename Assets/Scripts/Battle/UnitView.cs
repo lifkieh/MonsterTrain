@@ -36,6 +36,9 @@ namespace MTA.Battle
         float _roamFactor;                                  // idle-wander blend (0 busy → 1 at rest)
         float _weight = 1f;                                 // heft: heavy = ponderous/plodding, light = springy/darty
 
+        // Personality motion (Phase P1): role sets the idle character, element adds a signature tremor.
+        float _pFreq = 1f, _pBob = 1f, _pSway = 1f, _pJitter = 0.6f, _pHover = 0f, _pLimb = 1f, _pTremor = 0f, _pTremorFreq = 12f;
+
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
 
@@ -48,6 +51,7 @@ namespace MTA.Battle
         {
             _mirror = playerSide ? -1 : 1;
             _font = font;
+            Personality(role, element);
 
             // Soft ground shadow — a SIBLING under the stage (not a child of the fighter),
             // so it stays on the ground line while the fighter jumps. Behind the fighter.
@@ -190,6 +194,29 @@ namespace MTA.Battle
             if (_elemDotRt != null) _elemDotRt.gameObject.SetActive(!r);
         }
         public void SetWeight(float w) { _weight = Mathf.Clamp(w, 0.6f, 1.6f); }   // role-driven heft (presentation only)
+
+        // Per-role + per-element idle personality (Phase P1). Tanks plod low & slow; assassins are
+        // fast, restless, leaning; mages float; supports bounce; fire shivers; lightning twitches;
+        // water flows smooth; nature drifts gently. Presentation only.
+        void Personality(string role, string element)
+        {
+            switch (role)
+            {
+                case "Tank":     _pFreq = 0.72f; _pBob = 0.7f;  _pSway = 0.5f; _pJitter = 0.3f; _pHover = 0f; _pLimb = 0.7f; break;
+                case "Assassin": _pFreq = 1.55f; _pBob = 1.1f;  _pSway = 1.5f; _pJitter = 2.6f; _pHover = 0f; _pLimb = 1.45f; break;
+                case "Mage":     _pFreq = 0.9f;  _pBob = 0.6f;  _pSway = 0.7f; _pJitter = 0.4f; _pHover = 6f; _pLimb = 0.9f; break;
+                case "Support":  _pFreq = 1.15f; _pBob = 1.15f; _pSway = 1.0f; _pJitter = 0.8f; _pHover = 2.4f; _pLimb = 1.0f; break;
+                default:         _pFreq = 1.0f;  _pBob = 1.0f;  _pSway = 1.0f; _pJitter = 0.6f; _pHover = 0f; _pLimb = 1.0f; break;   // Bruiser
+            }
+            switch (element)
+            {
+                case "Fire":      _pTremor = 1.6f; _pTremorFreq = 17f; break;
+                case "Lightning": _pTremor = 2.2f; _pTremorFreq = 25f; break;
+                case "Nature":    _pTremor = 0.6f; _pTremorFreq = 6f;  break;
+                case "Water":     _pTremor = 0f;   _pJitter *= 0.5f;   break;   // smooth / flowing
+                default:          _pTremor = 0f; break;
+            }
+        }
         public void SetElement(Color c, string element)
         {
             if (_rt == null) return;
@@ -342,15 +369,18 @@ namespace MTA.Battle
             }
 
             float t = Time.time;
-            // Weight sell: light monsters bounce fast + springy, heavy ones plod slow + settled.
-            float light = Mathf.Lerp(1.28f, 0.72f, Mathf.InverseLerp(0.6f, 1.6f, _weight));
             float ph = _basePos.x * 0.013f + _basePos.y * 0.017f;
-            float bob = (_victory ? 12f : 5f) * (_victory ? 1f : light);
-            // Idle weight-shift: a slow side-to-side step so a static single-frame sprite still reads
-            // ALIVE (never a planted statue). Blended out the moment combat claims the unit. (V4 liveliness)
-            float step = _victory ? 0f : Mathf.Sin(t * 1.15f * light + ph) * 3.2f * light;
-            Vector2 idle = new Vector2(step, Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * light) + ph)) * bob);
-            float breathe = 1f + Mathf.Sin(t * 3f * light + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.045f * light);
+            // Personality idle (P1): role sets pace/spring/restlessness; element adds a signature tremor.
+            // A tank plods low & slow, an assassin is fast/restless/leaning, a mage floats; fire shivers,
+            // lightning twitches, water flows, nature drifts. Blended out the moment combat claims it.
+            float bob = _victory ? 12f : 5f * _pBob;
+            float step = _victory ? 0f : Mathf.Sin(t * 1.15f * _pFreq + ph) * 3.2f * _pSway;
+            float jitter = _victory ? 0f : Mathf.Sin(t * 11f + ph * 3f) * _pJitter;              // restless micro-motion
+            float tremor = (_victory || _pTremor <= 0f) ? 0f : Mathf.Sin(t * _pTremorFreq + ph) * _pTremor;  // element shiver
+            float hover = _victory ? 0f : Mathf.Sin(t * 1.6f + ph) * _pHover;                    // mages/supports float
+            Vector2 idle = new Vector2(step + jitter * 0.4f + tremor,
+                                       Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * _pFreq) + ph)) * bob + hover + jitter * 0.5f);
+            float breathe = 1f + Mathf.Sin(t * 3f * _pFreq + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.045f);
             Vector2 animOff = Vector2.zero; float animScale = 1f;
             float meshLean = 0f, hitWobble = 0f;
             Color flashC = new Color(1f, 1f, 1f, 0f);
@@ -403,7 +433,7 @@ namespace MTA.Battle
             // Feed the mesh-deform animator: chest-rise breathing, idle upper-body sway, attack bend,
             // impact ripple, and idle limb-ripple (only at rest). Makes the flat sprite read animated.
             float breathePx = (breathe - 1f) * ART * 0.5f;
-            PushDeform(step * 0.7f, meshLean, breathePx, hitWobble, _roamFactor);
+            PushDeform(step * 0.7f, meshLean, breathePx, hitWobble, _roamFactor * _pLimb);
             if (_artGroup != null) _artGroup.alpha = _reserveDim;
             if (_impSilT > 0f) { _impSilT -= dt; flashC = new Color(1f, 1f, 1f, 1f); }   // impact-frame silhouette
             if (_flash != null) _flash.color = flashC;

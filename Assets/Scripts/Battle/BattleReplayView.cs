@@ -51,6 +51,7 @@ namespace MTA.Battle
         bool _chargeClashed;
         double _lastClashT = -1;
         double _lastAdvT = -1;   // throttle for the SUPER EFFECTIVE / RESISTED readout
+        bool _firstBlood, _finalDuel;   // story-beat callouts (P3)
         const float CHARGE_DUR = 1.15f;      // opening sprint-to-centre duration
         const float CHARGE_CONTACT = 0.62f;  // when the two charges collide
 
@@ -89,6 +90,7 @@ namespace MTA.Battle
         float _baseZoom = 1f;   // dynamic rest zoom: framed by roster size so 1v1 is hero-sized and 3v3 isn't miniature (V1)
         float _lastShockwaveT = -1f;   // min-interval gate so concentric rings don't stack into a screen-filling mess (V4)
         Vector2 _camPush;   // directional camera language on big hits
+        Vector2 _camFocus, _camFocusTarget;   // cinematic pan: drift toward the action on big/ult hits (P2)
         float _slowmo = 1f, _slowmoT;
         Image _screenFlash; float _flashT;
 
@@ -139,11 +141,12 @@ namespace MTA.Battle
         {
             _font = font; _root = parent; _replay = replay; _styleMap = styleMap; _rIdx = 0;
             _clock = 0; _playing = true; _finishedFired = false;
-            _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f; _camPush = Vector2.zero;
+            _zoom = 1f; _zoomTarget = 1f; _shakeT = _shakeMag = _hitstop = 0f; _slowmo = 1f; _slowmoT = 0f; _camPush = Vector2.zero; _camFocus = _camFocusTarget = Vector2.zero;
             _spotlightBusy = false; _spotlightTargetKey = -1; _busyUnits.Clear(); _freezeBudget = FREEZE_CAP;
             _stageTime = 0f; _chargeClashed = false; _fillerQ = 0; _lastClashT = -1;
             _combo = 0; _comboLastT = -999; _comboAlpha = 0f; _comboScale = 1f; _splashT = 0f; _letterCur = _letterTarget = 0f;
             _finDarkCur = _finDarkTarget = 0f; _vsFlashed = false;
+            _firstBlood = _finalDuel = false;   // story beats (P3)
             _hudRng.s = result.logHash == 0UL ? 0x9E3779B97F4A7C15UL : result.logHash;   // seeded number scatter / pitch
             _pb.Init(result);
             _cho = BattleCinematicDirector.Choreograph(result, replay);   // deterministic (seeded by logHash)
@@ -202,7 +205,13 @@ namespace MTA.Battle
             var vgrt = vgGo.GetComponent<RectTransform>(); vgrt.SetParent(_root, false);
             vgrt.anchorMin = Vector2.zero; vgrt.anchorMax = Vector2.one; vgrt.offsetMin = vgrt.offsetMax = Vector2.zero;
             var vgImg = vgGo.GetComponent<Image>(); vgImg.sprite = ProceduralArt.Vignette();
-            vgImg.color = new Color(0f, 0f, 0f, 0.5f); vgImg.raycastTarget = false;
+            // Element-graded vignette (P5): each world tints the frame edges — warm ember (Fire),
+            // deep cool (Water), verdant (Nature) — so the biomes feel like different places at a glance.
+            Color vg = arenaElem == "Fire" ? new Color(0.16f, 0.05f, 0.02f)
+                     : arenaElem == "Water" ? new Color(0.02f, 0.06f, 0.15f)
+                     : arenaElem == "Nature" ? new Color(0.03f, 0.11f, 0.05f)
+                     : new Color(0f, 0f, 0f);
+            vgImg.color = new Color(vg.r, vg.g, vg.b, 0.52f); vgImg.raycastTarget = false;
 
             // Full-screen crit/ultimate flash overlay (over the fighters).
             var flashGo = new GameObject("ScreenFlash", typeof(RectTransform), typeof(Image));
@@ -622,6 +631,8 @@ namespace MTA.Battle
                 // Dynamic mixing — four states drive the music intensity:
                 //   normal → close (teams even) → last-monster-alive (climax) → finisher (duck).
                 int aliveA = _pb.AliveCount(0), aliveB = _pb.AliveCount(1), total = aliveA + aliveB;
+                if (!_finalDuel && aliveA == 1 && aliveB == 1 && _teamCount[0] + _teamCount[1] > 2)
+                { _finalDuel = true; Splash("FINAL DUEL!", CCrit, 82f, 1.1f, 6f); ApplyCam(ChoreoCam.ZoomCombo); }   // story beat (P3)
                 float intensity;
                 if (total <= 2) intensity = 1f;                                   // last monsters alive → full climax
                 else if (aliveA == aliveB) intensity = 0.7f;                       // close / even trade
@@ -721,6 +732,7 @@ namespace MTA.Battle
                     else if (ult && !_spotlightBusy)
                     {
                         _spotlightBusy = true; _spotlightTargetKey = Key(tt, ts);   // super ceremony, then the ult executes
+                        _camFocusTarget = Vector2.Lerp(PosOf(e.actorTeam, e.actorSlot), PosOf(tt, ts), 0.55f);   // cinematic pan to the clash (P2)
                         StartCoroutine(SuperUlt(e.actorTeam, e.actorSlot, tt, ts, b, st, actorSp, ranged));
                     }
                     else if (ranged)
@@ -737,6 +749,7 @@ namespace MTA.Battle
                     {
                         _spotlightBusy = true;                       // claim the single cinematic slot NOW
                         _spotlightTargetKey = Key(tt, ts);
+                        _camFocusTarget = Vector2.Lerp(PosOf(e.actorTeam, e.actorSlot), PosOf(tt, ts), 0.55f);   // cinematic pan to the clash (P2)
                         _zoomTarget = _baseZoom + (ult ? 0.14f : 0.06f);
                         StartCoroutine(SpotlightCombo(e.actorTeam, e.actorSlot, tt, ts, b, st, actorSp, ult));
                     }
@@ -783,6 +796,7 @@ namespace MTA.Battle
                         if (dv != null) StartCoroutine(ImpactFrame(dv));   // finisher impact frame
                     }
                     else ApplyCam(ChoreoCam.ShakeCrit);
+                    if (!b.endsBattle && !_firstBlood) { _firstBlood = true; Splash("FIRST BLOOD!", COrange, 76f, 1.0f, 5f); }   // story beat (P3)
                     HitStop(b.endsBattle ? 0.15f : 0.10f);   // KO freeze (tiered; heavy only)
                     AudioManager.Play(Sfx.Death);
                     AudioManager.Impact(b.endsBattle, true, _hudRng.Range(0.9f, 1.1f));
@@ -1546,8 +1560,14 @@ namespace MTA.Battle
                 shake = new Vector2(UnityEngine.Random.Range(-m, m), UnityEngine.Random.Range(-m, m));
                 if (_shakeT <= 0f) _shakeMag = 0f;
             }
-            Vector2 camOffset = _camPush + shake;
-            _stage.anchoredPosition = camOffset + new Vector2(0f, -175f);   // frame the action LOWER-CENTRE: fighters fill the lower frame, painted sky fills the top (V9 composition)
+            // Cinematic pan (P2): during a spotlight/ult the camera drifts toward the clash, then eases
+            // back to a wide, calm centre. Arena leans in more than the readability-first Brawl.
+            if (!_spotlightBusy) _camFocusTarget = Vector2.Lerp(_camFocusTarget, Vector2.zero, 4f * Time.deltaTime);
+            _camFocus = Vector2.Lerp(_camFocus, _camFocusTarget, 3.5f * Time.deltaTime);
+            float panAmt = mode == BattleMode.Arena ? 0.26f : 0.10f;
+            Vector2 pan = new Vector2(-_camFocus.x * panAmt, -_camFocus.y * panAmt * 0.5f);
+            Vector2 camOffset = _camPush + shake + pan;
+            _stage.anchoredPosition = camOffset + new Vector2(0f, -175f);   // frame the action LOWER-CENTRE (V9) + cinematic pan (P2)
 
             // Rest camera = the roster-framed base zoom; tighten toward the climax and after the win.
             float restZoom = _baseZoom;
