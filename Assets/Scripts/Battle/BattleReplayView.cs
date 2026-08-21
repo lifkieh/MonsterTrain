@@ -232,8 +232,8 @@ namespace MTA.Battle
             // the frame like a hero shot and 3v3 stays readable without cramming. Presentation only.
             int roster = Mathf.Max(_teamCount[0], _teamCount[1]);
             _baseZoom = mode == BattleMode.Arena
-                ? (roster <= 1 ? 1.42f : roster == 2 ? 1.26f : 1.12f)
-                : (roster <= 1 ? 1.34f : roster == 2 ? 1.18f : 1.05f);
+                ? (roster <= 1 ? 1.52f : roster == 2 ? 1.34f : 1.18f)   // tighter framing: crop the empty margins, enlarge fighters (V9)
+                : (roster <= 1 ? 1.44f : roster == 2 ? 1.26f : 1.11f);
 
             var size = new Vector2(256, 386);
             foreach (var u in _pb.Units)
@@ -1159,7 +1159,7 @@ namespace MTA.Battle
         static Vector2 BenchAnchor(int team, int slot)
         {
             float side = team == 0 ? -1f : 1f;
-            return new Vector2(side * 392f, 150f - slot * 150f);   // pulled further in so reserves never clip the screen edge under zoom (V4)
+            return new Vector2(side * 376f, 150f - slot * 150f);   // pulled further in so reserves never clip the screen edge under the tighter zoom (V9)
         }
 
         static Vector2 ChargeAnchor(int team, int slot)
@@ -1223,7 +1223,7 @@ namespace MTA.Battle
         UnitView ViewByKey(int key) => key < 0 ? null : View(key / 100, key % 100);
 
         static Vector2 ClampArena(Vector2 p) =>
-            new Vector2(Mathf.Clamp(p.x, -470f, 470f), Mathf.Clamp(p.y, -230f, 205f));
+            new Vector2(Mathf.Clamp(p.x, -448f, 448f), Mathf.Clamp(p.y, -230f, 205f));   // pulled in so units stay on-screen at the tighter zoom
 
         // Soft separation so the tangle never collapses onto one pixel (rule 8).
         void Separate()
@@ -1547,7 +1547,7 @@ namespace MTA.Battle
                 if (_shakeT <= 0f) _shakeMag = 0f;
             }
             Vector2 camOffset = _camPush + shake;
-            _stage.anchoredPosition = camOffset;
+            _stage.anchoredPosition = camOffset + new Vector2(0f, -175f);   // frame the action LOWER-CENTRE: fighters fill the lower frame, painted sky fills the top (V9 composition)
 
             // Rest camera = the roster-framed base zoom; tighten toward the climax and after the win.
             float restZoom = _baseZoom;

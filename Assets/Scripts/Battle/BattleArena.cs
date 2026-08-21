@@ -15,6 +15,7 @@ namespace MTA.Battle
     public class BattleArena
     {
         RectTransform _root, _far, _near, _fore, _backdrop, _floor, _mist;
+        RectTransform[] _clouds;   // slow drifting sky wisps (subtle life)
         Vector2 _farHome, _nearHome, _foreHome, _backdropHome, _floorHome;
         RectTransform[] _parts; Image[] _partImg; Vector2[] _vel; float _drift;
         string _element; Color _accent; float _partDir;
@@ -37,7 +38,7 @@ namespace MTA.Battle
             Theme(element, out var skyTop, out var skyHor, out var mtnCol, out var groundCol, out var floorCol, out var partCol, out var partDir);
             _accent = partCol; _partDir = partDir;
 
-            _root = Panel(parent, "Arena", skyTop, new Vector2(1360, 2560), Vector2.zero);   // fills the full portrait screen — no black bands (V1)
+            _root = Panel(parent, "Arena", skyTop, new Vector2(1360, 2980), Vector2.zero);   // taller so it still covers when the stage is framed lower (V9)
             _root.SetAsFirstSibling();
 
             // PAINTED backdrop (env-artist pass): one baked texture per biome — graded sky, soft
@@ -50,6 +51,16 @@ namespace MTA.Battle
             _backdrop.anchorMin = _backdrop.anchorMax = new Vector2(0.5f, 0.5f);
             _backdrop.sizeDelta = new Vector2(1400, 1900); _backdrop.anchoredPosition = new Vector2(0, 180);
             var bimg = bgo.GetComponent<RawImage>(); bimg.texture = backTex; bimg.raycastTarget = false;
+
+            // Drifting cloud wisps over the painted sky — subtle life so the upper frame isn't static.
+            _clouds = new RectTransform[3];
+            for (int i = 0; i < 3; i++)
+            {
+                var cc = new Color(skyHor.r + 0.20f, skyHor.g + 0.20f, skyHor.b + 0.20f, 0.14f);
+                var cl = Panel(_root, "Cloud", cc, new Vector2(580, 180), new Vector2(-340 + i * 300, 300 + (i % 2) * 150));
+                cl.GetComponent<Image>().sprite = ProceduralArt.Glow();
+                _clouds[i] = cl;
+            }
 
             _near = Layer("Near");
             var pil = new Color(floorCol.r * 0.6f, floorCol.g * 0.6f, floorCol.b * 0.6f, 0.95f);
@@ -234,6 +245,15 @@ namespace MTA.Battle
 
         void AmbientTick(float dt)
         {
+            if (_clouds != null)
+                for (int i = 0; i < _clouds.Length; i++)
+                {
+                    if (_clouds[i] == null) continue;
+                    var cp = _clouds[i].anchoredPosition;
+                    cp.x += (7f + i * 3f) * dt;
+                    if (cp.x > 800f) cp.x = -800f;
+                    _clouds[i].anchoredPosition = cp;
+                }
             if (_parts == null) return;
             bool nature = _element == "Nature", water = _element == "Water", fire = _element == "Fire";
             float gust = nature ? Mathf.Sin(_drift * 0.6f) * 30f + Mathf.Sin(_drift * 1.7f) * 12f : 0f;   // wind

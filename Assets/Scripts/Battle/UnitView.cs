@@ -181,7 +181,14 @@ namespace MTA.Battle
         public void Knock(Vector2 dir, float strength) { if (_dead) return; _impulse += dir.normalized * strength; }
         public void Launch(float strength) { if (_dead) return; _impulse += new Vector2(0f, strength); }
         public void Dodge(Vector2 dir) { if (_dead) return; _impulse += dir.normalized * 80f; _anim = Anim.Hit; _animTime = 0; _animDur = 0.24f; _animMag = 0.4f; }
-        public void SetReserve(bool r) { _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f; }
+        public void SetReserve(bool r)
+        {
+            _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f;
+            // Benched reserves drop their Lv + element badges — declutters the flanks and stops the
+            // badges clipping the screen edge. Shown again if promoted to the front. (V9)
+            if (_levelRt != null) _levelRt.gameObject.SetActive(!r);
+            if (_elemDotRt != null) _elemDotRt.gameObject.SetActive(!r);
+        }
         public void SetWeight(float w) { _weight = Mathf.Clamp(w, 0.6f, 1.6f); }   // role-driven heft (presentation only)
         public void SetElement(Color c, string element)
         {
