@@ -799,7 +799,7 @@ namespace MTA.Battle
                     if (!b.endsBattle && !_firstBlood) { _firstBlood = true; Splash("FIRST BLOOD!", COrange, 76f, 1.0f, 5f); }   // story beat (P3)
                     HitStop(b.endsBattle ? 0.15f : 0.10f);   // KO freeze (tiered; heavy only)
                     AudioManager.Play(Sfx.Death);
-                    AudioManager.Impact(b.endsBattle, true, _hudRng.Range(0.9f, 1.1f));
+                    AudioManager.Impact(b.endsBattle, true, _hudRng.Range(0.9f, 1.1f), Elem(_speciesByKey.TryGetValue(Key(e.targetTeam, e.targetSlot), out var vsp) ? vsp : ""));
                     if (b.endsBattle) AudioManager.Announce(Sfx.VoKO);
                     break;
                 }
@@ -868,7 +868,7 @@ namespace MTA.Battle
                 }
 
                 // 3) LAUNCHER — target spins up, attacker jumps after (heavy → capped freeze)
-                AudioManager.Impact(false, true, _hudRng.Range(0.9f, 1.1f));
+                AudioManager.Impact(false, true, _hudRng.Range(0.9f, 1.1f), Elem(actorSp));
                 _vfx.Play("hit_big", T.BasePos, 230f, Color.white); Shake(14f); FlashScreen(0.4f);
                 _elem.Burst(Elem(actorSp), T.BasePos, 220f, ElemFx.Impact);   // element flourish on the launcher
                 _texts.Spawn(T.BasePos + new Vector2(0, 46), "LAUNCH!", CCrit, 30);
@@ -892,7 +892,7 @@ namespace MTA.Battle
                 }
 
                 // 5) SLAM DOWN (spike — spin down, tiered freeze, impact frame on ultimate)
-                AudioManager.Impact(ult, true, _hudRng.Range(0.9f, 1.1f));
+                AudioManager.Impact(ult, true, _hudRng.Range(0.9f, 1.1f), Elem(actorSp));
                 T.Spin(900f, 0.16f);   // (V4: dropped the redundant "SLAM!" banner — LAUNCH + crit word already read)
                 yield return MoveOffset(T, T.combatOffset, new Vector2(dir.x * 40f, -30f), 0.11f / sp, true, gtint);
                 _vfx.Play(ult ? "explosion" : "hit_big", T.BasePos, ult ? 330f : 250f, Color.white);
@@ -1012,7 +1012,7 @@ namespace MTA.Battle
                     _elem.Burst(Elem(actorSp), tp, big ? 300f : 175f, big ? ElemFx.Ultimate : ElemFx.Impact);   // element splash on the landing shot
                     if (T != null) { T.Knock(new Vector2(at == 0 ? 1f : -1f, 0f), b.knockback); _arena?.React(big ? ArenaReact.Shockwave : b.crit ? ArenaReact.Crack : ArenaReact.Dust, Ground(tp)); }
                     Vector2 kdir = new Vector2(at == 0 ? 1f : -1f, 0f);
-                    if (big) { T?.Vibrate(3f, 0.15f); T?.Launch(50f); CamPush(kdir, 48f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f)); HitStop(0.15f); }
+                    if (big) { T?.Vibrate(3f, 0.15f); T?.Launch(50f); CamPush(kdir, 48f); Shake(18f); ZoomPunch(0.08f); FlashScreen(0.6f); StartCoroutine(Shockwave(tp, new Color(1f, 0.6f, 0.2f))); if (T != null) StartCoroutine(ImpactFrame(T)); AudioManager.Impact(ult, b.crit, _hudRng.Range(0.9f, 1.1f), Elem(actorSp)); HitStop(0.15f); }
                     else if (b.crit) { T?.Vibrate(2.5f, 0.09f); T?.Launch(40f); MicroImpact(T); CamPush(kdir, 26f); Shake(10f); ZoomPunch(0.03f); StartCoroutine(Shockwave(tp, CCrit)); HitStop(0.09f); }
                 }
                 yield return new WaitForSecondsRealtime(0.05f / sp);

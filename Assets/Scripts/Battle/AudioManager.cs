@@ -43,6 +43,22 @@ namespace MTA.Battle
             }
         }
 
+        // Element-signature impact layer (P4 audio identity): fire crackles/sizzles, water
+        // splashes with a downward bloop, nature lands with an organic low thud + rustle.
+        // Synthesised so each element SOUNDS like a different world. Deterministic.
+        public static AudioClip GenerateElement(string element)
+        {
+            var rng = new System.Random(999 + (element == null ? 0 : element.GetHashCode()));
+            float N() => (float)(rng.NextDouble() * 2.0 - 1.0);
+            switch (element)
+            {
+                case "Fire":   return Make("el_fire", 0.22f, t => (N() * Env(t, 15) + 0.4f * Sin(1400f + 700f * Mathf.Sin(70f * t), t) * Env(t, 9)) * 0.85f);
+                case "Water":  return Make("el_water", 0.28f, t => (Sin(540f - 380f * Mathf.Clamp01(t / 0.28f), t) * Env(t, 8) + 0.5f * N() * Env(t, 34)) * 0.85f);
+                case "Nature": return Make("el_nature", 0.26f, t => (Sin(140f, t) * Env(t, 7) + 0.32f * Sin(300f, t) * Env(t, 15) + 0.1f * N() * Env(t, 22)) * 0.9f);   // woody knock (mid), distinct from fire's sizzle + water's bloop
+                default: return null;
+            }
+        }
+
         static float Sin(float f, float t) => Mathf.Sin(2f * Mathf.PI * f * t);
         static float Env(float t, float k) => Mathf.Exp(-t * k);
 
@@ -118,6 +134,7 @@ namespace MTA.Battle
         public static float MusicVolume = 0.6f, SfxVolume = 0.9f, UiVolume = 0.9f;
 
         readonly Dictionary<Sfx, AudioClip> _clips = new Dictionary<Sfx, AudioClip>();
+        readonly Dictionary<string, AudioClip> _elemClips = new Dictionary<string, AudioClip>();   // element-signature impact layers (P4)
         readonly Dictionary<Music, AudioClip> _music = new Dictionary<Music, AudioClip>();
         AudioSource[] _pool; int _next;
         AudioSource _musicA, _musicB, _activeSrc, _oldSrc;
@@ -139,6 +156,7 @@ namespace MTA.Battle
             SfxVolume = PlayerPrefs.GetFloat(KSfx, 0.9f);
             UiVolume = PlayerPrefs.GetFloat(KUi, 0.9f);
             foreach (Sfx id in Enum.GetValues(typeof(Sfx))) _clips[id] = SfxLibrary.Generate(id);
+            foreach (var el in new[] { "Fire", "Water", "Nature" }) _elemClips[el] = SfxLibrary.GenerateElement(el);   // element impact layers
             // Override key combat SFX with real CC0 creature sounds if present.
             OverrideSfx(Sfx.Hit, "Audio/sfx_bug_02");
             OverrideSfx(Sfx.Crit, "Audio/sfx_roar_01");
@@ -199,14 +217,29 @@ namespace MTA.Battle
         // Announcer callout (synth stinger, or a CC0 voice clip if present).
         public static void Announce(Sfx voice) => Play(voice);
 
-        // Layered impact for crit/ult/KO only: hit + bass thump (+ crit/ult), pitch-varied.
-        public static void Impact(bool ult, bool crit, float pitch)
+        // Layered impact for crit/ult/KO only: hit + bass thump (+ crit/ult) + element signature.
+        public static void Impact(bool ult, bool crit, float pitch, string element = "")
         {
             if (Muted || Instance == null) return;
             Instance.PlayPitchedInternal(Sfx.Hit, pitch, 0.9f);
             Instance.PlayPitchedInternal(Sfx.Bass, pitch * 0.98f, ult ? 1f : 0.7f);
             if (ult) Instance.PlayPitchedInternal(Sfx.Ultimate, pitch, 1f);
             else if (crit) Instance.PlayPitchedInternal(Sfx.Crit, pitch, 0.9f);
+            if (!string.IsNullOrEmpty(element)) Instance.PlayElementInternal(element, pitch, ult ? 0.95f : 0.7f);   // element identity (P4)
+        }
+
+        // Element-signature sound (routed from the element VFX bursts so hits SOUND like their element).
+        public static void PlayElement(string element, float pitch, float vol)
+        {
+            if (Muted || Instance == null) return;
+            Instance.PlayElementInternal(element, pitch, vol);
+        }
+        void PlayElementInternal(string element, float pitch, float vol)
+        {
+            if (string.IsNullOrEmpty(element) || !_elemClips.TryGetValue(element, out var clip) || clip == null || _pool == null) return;
+            var src = _pool[_next]; _next = (_next + 1) % _pool.Length;
+            src.pitch = Mathf.Clamp(pitch, 0.5f, 2f);
+            src.PlayOneShot(clip, Mathf.Clamp01(SfxVolume * vol));
         }
 
         // ---- Music ----

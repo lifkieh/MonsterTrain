@@ -1427,6 +1427,10 @@ namespace MTA.App
             var A = MTA.Battle.BattleMode.Arena; var Br = MTA.Battle.BattleMode.Brawl;
             var dir = System.IO.Path.Combine(Application.persistentDataPath, "showcase");
             try { System.IO.Directory.CreateDirectory(dir); } catch { }
+            // Record the final mixed audio to a WAV so the SFX + element identity can be VERIFIED (P4).
+            MTA.Battle.AudioCapture cap = null;
+            var al = FindObjectOfType<AudioListener>();
+            if (al != null) { cap = al.gameObject.AddComponent<MTA.Battle.AudioCapture>(); cap.Begin(200f); }
             var scenes = new (string name, string[] p, string[] e, bool tag, MTA.Battle.BattleMode mode, int seed, int enemyLevel)[]
             {
                 ("1_arena_1v1", new[]{"fire_lizard"}, new[]{"jelly"}, false, A, 101, 12),
@@ -1451,6 +1455,7 @@ namespace MTA.App
                 }
                 yield return new WaitForSecondsRealtime(1.0f);
             }
+            if (cap != null) cap.Write(System.IO.Path.Combine(dir, "showcase_audio.wav"));
             Debug.Log("SHOWCASE_DONE dir=" + dir);
         }
 
