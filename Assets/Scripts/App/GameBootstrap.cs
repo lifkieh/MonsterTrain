@@ -1328,9 +1328,24 @@ namespace MTA.App
             _view.elementNames = _elemNames; _view.roleNames = _roleNames;   // procedural portraits
             _view.displayNames = _displayNames;           // Title Case names over fighters
             _view.rarities = _rarities;                   // VS-screen rarity stars
+            _view.levelByKey = BuildLevelByKey();          // Lv badge on each fighter
             _view.bossMusic = boss;
             _view.mode = mode;
             _view.Play(result, replay, _atkStyles, _battle, _font);
+        }
+
+        // Per-fighter level keyed by (team,slot), surfaced as the in-battle Lv badge. Player monsters
+        // fight at their saved collection level; enemies at the session's enemy level.
+        Dictionary<int, int> BuildLevelByKey()
+        {
+            var m = new Dictionary<int, int>();
+            var s = _ctrl.Session;
+            for (int i = 0; i < s.playerTeam.Count; i++)
+                m[0 * 100 + i] = (s.playerLevels != null && s.playerLevels.TryGetValue(s.playerTeam[i], out var l)) ? l : 5;
+            if (s.enemyTeam != null)
+                for (int i = 0; i < s.enemyTeam.Count; i++)
+                    m[1 * 100 + i] = s.enemyLevel;
+            return m;
         }
 
         // ===================== Visual-review showcase harness =====================

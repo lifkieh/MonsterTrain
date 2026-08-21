@@ -17,7 +17,7 @@ namespace MTA.Battle
 
         Image _shadow, _hpFill, _hpDelayed; CanvasGroup _artGroup, _barGroup;
         DeformSprite _dBody, _dOutline, _dFlash; Graphic _flash; Sprite _spriteRef;   // mesh-deform body + outline + flash (the "animator")
-        RectTransform _rt, _artRt, _shadowRt, _barsRt, _hpBgRt, _nameRt, _elemDotRt; Text _name;
+        RectTransform _rt, _artRt, _shadowRt, _barsRt, _hpBgRt, _nameRt, _elemDotRt, _levelRt; Text _name; Font _font;
         Vector2 _basePos; int _mirror = 1;
         int _maxHp = 1; float _targetFrac = 1f, _dispFrac = 1f, _delayFrac = 1f;
         float _ghostHold, _lastTarget = 1f;   // HP ghost bar: delay before the lost-HP chunk drains
@@ -47,6 +47,7 @@ namespace MTA.Battle
             string element = "", string role = "Bruiser", bool playerSide = false)
         {
             _mirror = playerSide ? -1 : 1;
+            _font = font;
 
             // Soft ground shadow — a SIBLING under the stage (not a child of the fighter),
             // so it stays on the ground line while the fighter jumps. Behind the fighter.
@@ -182,15 +183,40 @@ namespace MTA.Battle
         public void Dodge(Vector2 dir) { if (_dead) return; _impulse += dir.normalized * 80f; _anim = Anim.Hit; _animTime = 0; _animDur = 0.24f; _animMag = 0.4f; }
         public void SetReserve(bool r) { _reserveScale = r ? 0.62f : 1f; _reserveDim = r ? 0.55f : 1f; }
         public void SetWeight(float w) { _weight = Mathf.Clamp(w, 0.6f, 1.6f); }   // role-driven heft (presentation only)
-        public void SetElement(Color c)
+        public void SetElement(Color c, string element)
         {
             if (_rt == null) return;
             var go = new GameObject("Elem", typeof(RectTransform), typeof(Image));
             var rt = go.GetComponent<RectTransform>(); rt.SetParent(_barsRt != null ? _barsRt : _rt, false);
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(20, 20); rt.anchoredPosition = new Vector2(-86, ART * 0.5f + 22f); _elemDotRt = rt;
-            if (_barRaise != 0f) rt.anchoredPosition += new Vector2(0, _barRaise);
-            var img = go.GetComponent<Image>(); img.sprite = ProceduralArt.Disc(); img.color = c; img.raycastTarget = false;
+            rt.sizeDelta = new Vector2(26, 26); rt.anchoredPosition = new Vector2(-92, ART * 0.5f + 22f + _barRaise); _elemDotRt = rt;
+            var img = go.GetComponent<Image>(); img.sprite = ElemIcon(element); img.color = c; img.raycastTarget = false;   // element-shaped icon, not a plain dot
+        }
+
+        static Sprite ElemIcon(string e)
+        {
+            switch (e)
+            {
+                case "Fire": return ProceduralArt.Flame();
+                case "Water": return ProceduralArt.Droplet();
+                case "Nature": return ProceduralArt.Leaf();
+                case "Lightning": return ProceduralArt.Bolt();
+                default: return ProceduralArt.Disc();
+            }
+        }
+
+        // Level badge (Lv{n}) on a dark pill, to the right of the HP bar — surfaces the monster's level.
+        public void SetLevel(int lvl)
+        {
+            if (_barsRt == null || _font == null || lvl <= 0) return;
+            var go = new GameObject("Lv", typeof(RectTransform));
+            _levelRt = go.GetComponent<RectTransform>(); _levelRt.SetParent(_barsRt, false);
+            _levelRt.anchorMin = _levelRt.anchorMax = new Vector2(0.5f, 0.5f);
+            _levelRt.sizeDelta = new Vector2(58, 24); _levelRt.anchoredPosition = new Vector2(96, ART * 0.5f + 22f + _barRaise);
+            var bg = new GameObject("bg", typeof(RectTransform), typeof(Image));
+            var brt = bg.GetComponent<RectTransform>(); brt.SetParent(_levelRt, false); brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one; brt.offsetMin = brt.offsetMax = Vector2.zero;
+            var bi = bg.GetComponent<Image>(); bi.sprite = ProceduralArt.RoundedRect(); bi.color = new Color(0.1f, 0.11f, 0.14f, 0.92f); bi.raycastTarget = false;
+            var t = MakeText(_levelRt, _font, "Lv" + lvl, 15, Vector2.zero, TextAnchor.MiddleCenter); t.fontStyle = FontStyle.Bold; t.color = new Color(1f, 0.88f, 0.5f);
         }
 
         // Raise this fighter's HP bar + name by a per-slot amount so stacked teammates' HUD does not
@@ -202,6 +228,7 @@ namespace MTA.Battle
             if (_hpBgRt != null) _hpBgRt.anchoredPosition = new Vector2(_hpBgRt.anchoredPosition.x, ART * 0.5f + 22f + dy);
             if (_nameRt != null) _nameRt.anchoredPosition = new Vector2(_nameRt.anchoredPosition.x, ART * 0.5f + 44f + dy);
             if (_elemDotRt != null) _elemDotRt.anchoredPosition = new Vector2(_elemDotRt.anchoredPosition.x, ART * 0.5f + 22f + dy);
+            if (_levelRt != null) _levelRt.anchoredPosition = new Vector2(_levelRt.anchoredPosition.x, ART * 0.5f + 22f + dy);
         }
         public void SetBasePos(Vector2 p) { _basePos = p; }
         public void EnterFrom(Vector2 from, Vector2 to) { _basePos = to; _impulse = from - to; }   // slide in via decaying impulse

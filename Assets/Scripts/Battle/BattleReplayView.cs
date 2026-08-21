@@ -50,6 +50,7 @@ namespace MTA.Battle
         float _stageTime;                // real seconds since the fight started (opening charge)
         bool _chargeClashed;
         double _lastClashT = -1;
+        double _lastAdvT = -1;   // throttle for the SUPER EFFECTIVE / RESISTED readout
         const float CHARGE_DUR = 1.15f;      // opening sprint-to-centre duration
         const float CHARGE_CONTACT = 0.62f;  // when the two charges collide
 
@@ -75,6 +76,7 @@ namespace MTA.Battle
         Image _finDark; float _finDarkCur, _finDarkTarget;
         RectTransform _victoryRoot; Text _victoryText; Image[] _victoryStars; string _winBanner = "VICTORY!"; int _winStars = 1;   // victory hero screen
         public Dictionary<string, Color> elementColors;   // species -> element indicator color (set before Play)
+        public Dictionary<int, int> levelByKey;            // Key(team,slot) -> monster level (set before Play; surfaces level on the fighter)
         public Dictionary<string, string> elementNames, roleNames;   // species -> element / role, for portraits
         public Dictionary<string, string> displayNames;   // species -> Title Case name shown over the fighter
         List<ReplayEvent> _replay; Choreography _cho; int _rIdx;
@@ -250,9 +252,10 @@ namespace MTA.Battle
                 v.SetReserve(false);                    // brawl: everyone full-size, on stage
                 v.SetWeight(RoleWeight(role));          // heft by role (presentation only)
                 v.SetMaxHp(u.maxHp); v.SetHp(u.currentHp); v.PlaySpawn();
-                if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec);
+                if (elementColors != null && elementColors.TryGetValue(u.speciesId, out var ec)) v.SetElement(ec, elem);
                 v.SetBarRaise((u.slot % 3) * 32f);   // stagger HP-bar height per slot so stacked teammates don't collide into label soup
                 int k = Key(u.team, u.slot);
+                if (levelByKey != null && levelByKey.TryGetValue(k, out var lvl)) v.SetLevel(lvl);   // Lv badge on the fighter
                 _views[k] = v;
                 _speciesByKey[k] = u.speciesId;
                 _styleByKey[k] = (_styleMap != null && _styleMap.TryGetValue(u.speciesId, out var st)) ? st : AttackStyle.MeleeLunge;
@@ -692,6 +695,18 @@ namespace MTA.Battle
                     RegisterCombo();   // same offensive-event set as Combo King
 
                     int tt = e.targetTeam, ts = e.targetSlot;
+
+                    // Element matchup readout: surface the triangle (Fire>Nature>Water>Fire) that the sim
+                    // already applies to damage. Throttled so it reads as a call-out, not spam.
+                    int adv = ElementAdv(Elem(actorSp), _speciesByKey.TryGetValue(Key(tt, ts), out var tsp) ? Elem(tsp) : "");
+                    if (adv != 0 && _clock - _lastAdvT > 0.8)
+                    {
+                        _lastAdvT = _clock;
+                        Vector2 tp = PosOf(tt, ts) + new Vector2(0, 150);
+                        if (adv > 0) _texts.Spawn(tp, "SUPER EFFECTIVE!", new Color(1f, 0.82f, 0.28f), 26);
+                        else _texts.Spawn(tp, "RESISTED", new Color(0.72f, 0.82f, 1f), 22);
+                    }
+
                     bool ranged = AttackStyles.IsRanged(st);
                     bool big = ult || b.crit || b.hits >= 3;
                     bool clash = _plan != null && _plan.clashEventIdx.Contains(idx);
@@ -1354,6 +1369,15 @@ namespace MTA.Battle
 
         // Element of a species (for element-signature VFX routing), "" when unknown.
         string Elem(string sp) => (sp != null && elementNames != null && elementNames.TryGetValue(sp, out var e)) ? e : "";
+
+        // Element matchup (matches StatMath.ElementMultiplier's triangle): +1 advantage, -1 disadvantage.
+        static int ElementAdv(string a, string d)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(d) || a == d) return 0;
+            if ((a == "Fire" && d == "Nature") || (a == "Nature" && d == "Water") || (a == "Water" && d == "Fire")) return 1;
+            if ((d == "Fire" && a == "Nature") || (d == "Nature" && a == "Water") || (d == "Water" && a == "Fire")) return -1;
+            return 0;
+        }
         // Role → animation heft. Tanks plod, assassins/mages dart. Presentation only.
         static float RoleWeight(string role)
         {
