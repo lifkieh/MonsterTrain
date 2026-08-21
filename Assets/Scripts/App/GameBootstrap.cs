@@ -125,6 +125,12 @@ namespace MTA.App
             BuildPopup(canvas.transform);
             BuildLoading(canvas.transform);
 
+            // Cohesion with the battle look: give every meta screen an opaque PAINTED backdrop
+            // (behind its own content, so labels/buttons stay fully bright on top). Replaces the
+            // flat solid-colour screen fills. The battle panel is left alone (the arena covers it).
+            foreach (var scr in new[] { _menu, _select, _result, _progress, _collection, _detail, _career, _daily, _settings, _about, _onboarding, _quests, _achievements, _dex })
+                PaintScreen(scr);
+
             _ctrl.Flow.OnPhaseChanged += OnPhase;
             _view.OnFinished += _ => { if (!ShowcaseActive()) _ctrl.OnBattleFinished(); };   // showcase is READ-ONLY: never trigger the result/reward/save flow
             Quests.SyncDay(_profile, DailyRewards.DayIndex(System.DateTime.Now));
@@ -133,11 +139,26 @@ namespace MTA.App
             // deterministic battles (no menus, no input) so the combat can be captured by an
             // external screenshotter. Dev tooling only — never reached in normal play.
             if (ShowcaseActive()) { StartCoroutine(ShowcaseRoutine()); StartCoroutine(HideLoading()); return; }
+            if (UiShowcaseActive()) { StartCoroutine(UiShowcaseRoutine()); StartCoroutine(HideLoading()); return; }
 
             // First launch: run onboarding. Otherwise greet with the daily reward if claimable.
             if (!_profile.onboarded) _ctrl.ToOnboarding();
             else if (DailyRewards.CanClaim(_profile, System.DateTime.Now)) _ctrl.ToDaily();
             StartCoroutine(HideLoading());   // brief branded loading screen
+        }
+
+        // Give a screen an opaque painted backdrop behind its content: the screen's own flat fill is
+        // made transparent and a full-stretch painted RawImage is inserted at the back of that screen.
+        static void PaintScreen(RectTransform screen)
+        {
+            if (screen == null) return;
+            var img = screen.GetComponent<Image>();
+            if (img != null) img.color = new Color(0, 0, 0, 0);
+            var bg = new GameObject("ScreenBg", typeof(RectTransform), typeof(RawImage));
+            var rt = bg.GetComponent<RectTransform>(); rt.SetParent(screen, false);
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one; rt.offsetMin = rt.offsetMax = Vector2.zero;
+            var ri = bg.GetComponent<RawImage>(); ri.texture = MTA.Battle.PaintedBackdrop.Menu(); ri.raycastTarget = false;
+            rt.SetAsFirstSibling();   // behind the screen's own labels/buttons
         }
 
         void OnPhase(GamePhase p)
@@ -363,6 +384,19 @@ namespace MTA.App
                 var pi = pgo.GetComponent<Image>(); pi.sprite = sprite; pi.preserveAspect = true; pi.raycastTarget = false;
             }
             else IconBadge(rt, id, new Vector2(0, 0.5f), new Vector2(0, 0.5f), new Vector2(40, 0), 72, 30);
+
+            // Element badge (top-right) + Lv (bottom-right) so the card shows type + level at a glance.
+            var spd = _reg != null ? _reg.Get(id) : null;
+            string elem = spd != null ? spd.element : "";
+            UIFactory.ElementBadge(rt, elem, new Vector2(126, 30), 34, _font);
+            int lvl = 0;
+            if (_profile != null && _profile.collection != null)
+                foreach (var ms in _profile.collection) if (ms.speciesId == id) { lvl = ms.level; break; }
+            if (lvl > 0)
+            {
+                var lvTxt = UIFactory.Label(rt, "Lv" + lvl, 22, new Vector2(120, -30), new Vector2(90, 30), _font);
+                lvTxt.color = new Color(1f, 0.88f, 0.5f); lvTxt.raycastTarget = false;
+            }
         }
 
         void IconBadge(RectTransform parent, string id, Vector2 amin, Vector2 amax, Vector2 pos, float sz, int fs)
@@ -1354,6 +1388,38 @@ namespace MTA.App
             var args = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length; i++) if (args[i] == "-showcase") return true;
             return false;
+        }
+
+        static bool UiShowcaseActive()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++) if (args[i] == "-uishowcase") return true;
+            return false;
+        }
+
+        // Meta-UI review harness: visit each menu screen on a timer and screenshot it (no input).
+        System.Collections.IEnumerator UiShowcaseRoutine()
+        {
+            var dir = System.IO.Path.Combine(Application.persistentDataPath, "uishowcase");
+            try { System.IO.Directory.CreateDirectory(dir); } catch { }
+            if (_loading != null) _loading.gameObject.SetActive(false);   // no loading overlay dimming/lagging the captures
+            _detailSpecies = (_profile != null && _profile.collection != null && _profile.collection.Count > 0)
+                ? _profile.collection[0].speciesId
+                : (_ctrl.SpeciesPool.Count > 0 ? _ctrl.SpeciesPool[0] : "");
+            yield return new WaitForSecondsRealtime(1.2f);
+            _ctrl.BackToMenu();   yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "1_menu");       yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.StartGame();    yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "2_teamselect"); yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.ToCollection(); yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "3_collection"); yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.ToDetail();     yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "4_detail");     yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.ToCareer();     yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "5_career");     yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.ToDaily();      yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "6_daily");      yield return new WaitForSecondsRealtime(0.6f);
+            _ctrl.ToQuests();     yield return new WaitForSecondsRealtime(1.2f); UiCap(dir, "7_quests");     yield return new WaitForSecondsRealtime(0.6f);
+            Debug.Log("UISHOWCASE_DONE dir=" + dir);
+        }
+
+        static void UiCap(string dir, string name)
+        {
+            try { ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(dir, name + ".png")); } catch { }
         }
 
         System.Collections.IEnumerator ShowcaseRoutine()

@@ -83,6 +83,38 @@ namespace MTA.Battle
             return tex;
         }
 
+        // Calm painted MENU backdrop (cohesion with the battle look): indigo vertical gradient,
+        // a soft top glow, faint low-freq nebula clouds, and a baked vignette. Dark enough that
+        // scrimmed panels + text stay readable on top. Cached.
+        public static Texture2D Menu()
+        {
+            if (_cache.TryGetValue("__menu", out var cached) && cached != null) return cached;
+            const int W = 384, H = 680;
+            var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var px = new Color32[W * H];
+            Color top = new Color(0.06f, 0.07f, 0.15f), bot = new Color(0.09f, 0.12f, 0.19f);
+            Color glow = new Color(0.22f, 0.30f, 0.55f);
+            for (int y = 0; y < H; y++)
+            {
+                float v = y / (H - 1f);
+                for (int x = 0; x < W; x++)
+                {
+                    float u = x / (W - 1f);
+                    Color col = Lerp(bot, top, Mathf.SmoothStep(0f, 1f, v));
+                    float gd = Vector2.Distance(new Vector2(u, v), new Vector2(0.5f, 0.84f));
+                    col = Lerp(col, glow, Mathf.Clamp01(1f - gd / 0.62f) * 0.34f);           // top glow
+                    float neb = Perlin(u * 2.2f + 4.7f, v * 2.6f + 1.3f);
+                    col = Lerp(col, glow, Mathf.SmoothStep(0.55f, 0.86f, neb) * 0.20f);       // soft nebula
+                    float vd = Vector2.Distance(new Vector2(u, v), new Vector2(0.5f, 0.5f));
+                    col = Lerp(col, Color.black, Mathf.Clamp01((vd - 0.5f) / 0.7f) * 0.5f);   // vignette
+                    px[y * W + x] = col;
+                }
+            }
+            tex.SetPixels32(px); tex.Apply(false, false);
+            _cache["__menu"] = tex;
+            return tex;
+        }
+
         // A ridge silhouette: value in 0..1 from layered sines (cheap, smooth).
         static float Ridge(float u, float freq, float seed)
         {
