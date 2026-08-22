@@ -136,6 +136,22 @@ namespace MTA.Battle
             }
         }
 
+        // Role staging at battle start (Phase 6): tanks forward + low, mages/supports back + high,
+        // assassins offset high. Pure visual — the sim/positions of combat are unaffected (the charge
+        // overwrites these within a second); it just reads the team composition before contact.
+        static Vector2 RoleStageOffset(string role, int team)
+        {
+            float side = team == 0 ? -1f : 1f;
+            switch (role)
+            {
+                case "Tank":     return new Vector2(-side * 42f, -26f);   // forward + planted
+                case "Mage":     return new Vector2(side * 56f, 42f);     // rear + high
+                case "Support":  return new Vector2(side * 46f, 30f);     // rear
+                case "Assassin": return new Vector2(-side * 18f, 56f);    // offset high
+                default:         return Vector2.zero;                     // Bruiser holds the line
+            }
+        }
+
         public void Play(BattleResult result, List<ReplayEvent> replay,
             Dictionary<string, AttackStyle> styleMap, RectTransform parent, Font font)
         {
@@ -255,7 +271,7 @@ namespace MTA.Battle
                 string elem = elementNames != null && elementNames.TryGetValue(u.speciesId, out var en) ? en : "";
                 string role = roleNames != null && roleNames.TryGetValue(u.speciesId, out var rn) ? rn : "Bruiser";
                 string dn = displayNames != null && displayNames.TryGetValue(u.speciesId, out var dnv) ? dnv : Humanize(u.speciesId);
-                var anchor = Formation(u.team, u.slot);
+                var anchor = Formation(u.team, u.slot) + RoleStageOffset(role, u.team);   // role staging at battle start (Phase 6)
                 v.Build(_stage, anchor, size, teamColor, speciesColor,
                     u.speciesId, dn, _font, elem, role, u.team == 0);
                 v.SetReserve(false);                    // brawl: everyone full-size, on stage

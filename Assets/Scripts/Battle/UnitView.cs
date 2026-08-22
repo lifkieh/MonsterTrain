@@ -39,6 +39,11 @@ namespace MTA.Battle
         // Personality motion (Phase P1): role sets the idle character, element adds a signature tremor.
         float _pFreq = 1f, _pBob = 1f, _pSway = 1f, _pJitter = 0.6f, _pHover = 0f, _pLimb = 1f, _pTremor = 0f, _pTremorFreq = 12f;
 
+        // Species character (Character Direction pass): per-creature stance/lean/pace/elasticity/etc.
+        string _speciesId;
+        float _cLean = 0f, _cStance = 0f, _cElastic = 1f, _cSettle = 4.5f, _cAntic = 1f;
+        HitStyle _cHit = HitStyle.Recoil; DeathStyle _cDeath = DeathStyle.LaunchSpin;
+
         enum Anim { None, Attack, Hit, Heal }
         Anim _anim = Anim.None; float _animTime, _animDur, _animDist, _animMag = 1f; Vector2 _animDir; bool _animUlt;
 
@@ -51,6 +56,7 @@ namespace MTA.Battle
         {
             _mirror = playerSide ? -1 : 1;
             _font = font;
+            _speciesId = speciesId;
             Personality(role, element);
 
             // Soft ground shadow — a SIBLING under the stage (not a child of the fighter),
@@ -176,7 +182,7 @@ namespace MTA.Battle
 
         public void PlaySpawn() => _spawnT = 0f;
         public void PlayVictory() { if (!_dead) _victory = true; }
-        public void PlayAttack(Vector2 dir, float dist, bool ult) { if (_dead) return; _anim = Anim.Attack; _animTime = 0; _animDur = ult ? 0.5f : 0.32f; _animDir = dir.normalized; _animDist = dist; _animUlt = ult; }
+        public void PlayAttack(Vector2 dir, float dist, bool ult) { if (_dead) return; _anim = Anim.Attack; _animTime = 0; _animDur = (ult ? 0.5f : 0.32f) * Mathf.Lerp(1f, _cAntic, 0.6f); _animDir = dir.normalized; _animDist = dist; _animUlt = ult; }   // species wind-up pace (Phase 5)
         public void PlayHit(bool crit) { if (_dead) return; _anim = Anim.Hit; _animTime = 0; _animDur = 0.3f; _animMag = crit ? 2.4f : 1f; }
         public void PlayHeal() { if (_dead) return; _anim = Anim.Heal; _animTime = 0; _animDur = 0.45f; }
         public void PlayDeath(Vector2 knock) { if (_dead) return; _dead = true; _victory = false; _deadTime = 0; _knock = knock; if (_name != null) _name.color = new Color(1, 1, 1, 0.5f); }
@@ -215,6 +221,19 @@ namespace MTA.Battle
                 case "Nature":    _pTremor = 0.6f; _pTremorFreq = 6f;  break;
                 case "Water":     _pTremor = 0f;   _pJitter *= 0.5f;   break;   // smooth / flowing
                 default:          _pTremor = 0f; break;
+            }
+            // Species character layer (Character Direction): each creature moves like itself.
+            if (CharacterProfile.TryGet(_speciesId, out var ct))
+            {
+                _cLean = ct.lean; _cStance = ct.stance; _pFreq *= ct.freq;
+                _cElastic = ct.elastic; _cSettle = ct.settle; _cAntic = ct.antic; _cHit = ct.hit; _cDeath = ct.death;
+            }
+            else
+            {
+                int h = _speciesId == null ? 0 : _speciesId.GetHashCode();   // no two species identical
+                _pFreq *= 0.9f + ((h & 255) / 255f) * 0.3f;
+                _cLean = ((h >> 8) & 15) - 7;
+                _cStance = ((h >> 12) & 15) - 7;
             }
         }
         public void SetElement(Color c, string element)
@@ -349,22 +368,35 @@ namespace MTA.Battle
 
             // Cinematic impulse (knockback / launch / slide-in) — slower ease-out (~0.25 s)
             // so victim knockback reads heavy; the engagement system re-closes the gap.
-            _impulse = Vector2.Lerp(_impulse, Vector2.zero, 4.5f * dt);
+            _impulse = Vector2.Lerp(_impulse, Vector2.zero, _cSettle * dt);   // species settle: heavy = slow, agile = snappy
             if (_impulse.sqrMagnitude < 0.25f) _impulse = Vector2.zero;
 
             if (_dead)
             {
                 _deadTime += dt;
                 float p = Mathf.Clamp01(_deadTime / 0.7f);
-                Vector2 pos = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, -50f * p);
+                // Species/element death language (Phase 4): Collapse (heavy drop+flatten), Tumble (agile
+                // roll), Dissolve (water/fire sink + quick fade), Scatter (nature gentle lift), else the
+                // default launch-spin. Reads WHO died without the name.
+                float side = _knock.x >= 0f ? 1f : -1f;
+                float rot, dropY, scX = 1f, scY = 1f, aFade = 1f - p;
+                switch (_cDeath)
+                {
+                    case DeathStyle.Collapse: rot = 0f; dropY = -95f * p; scY = 1f - 0.5f * p; scX = 1f + 0.16f * p; break;
+                    case DeathStyle.Tumble:   rot = side * 430f * p; dropY = -55f * p; break;
+                    case DeathStyle.Dissolve: rot = side * 90f * p; dropY = -30f * p; aFade = Mathf.Clamp01(1f - p * 1.5f); break;
+                    case DeathStyle.Scatter:  rot = side * 120f * p; dropY = 16f * p; break;
+                    default:                  rot = side * 210f * p; dropY = -50f * p; break;
+                }
+                Vector2 pos = _basePos + _impulse + _knock * (60f * p) + new Vector2(0, dropY);
                 _rt.anchoredPosition = pos;
-                _rt.localScale = Vector3.one * (1f - 0.3f * p) * spawnScale;
-                _rt.localRotation = Quaternion.Euler(0, 0, (_knock.x >= 0f ? 1f : -1f) * 210f * p);   // launched spin
+                _rt.localScale = new Vector3(scX, scY, 1f) * (1f - 0.3f * p) * spawnScale;
+                _rt.localRotation = Quaternion.Euler(0, 0, rot);
                 if (_artRt != null) { _artRt.localScale = new Vector3(_mirror, 1f, 1f); _artRt.localRotation = Quaternion.identity; _artRt.anchoredPosition = Vector2.zero; }
-                if (_artGroup != null) _artGroup.alpha = (1f - p) * _reserveDim;      // dissolve
+                if (_artGroup != null) _artGroup.alpha = aFade * _reserveDim;
                 if (_barGroup != null) _barGroup.alpha = 1f - p;                      // HP bar despawns
                 if (_flash != null) _flash.color = new Color(0.05f, 0.05f, 0.08f, p * 0.7f);
-                UpdateShadow(pos, spawnScale, (1f - p));
+                UpdateShadow(pos, spawnScale, aFade);
                 return;
             }
 
@@ -379,7 +411,7 @@ namespace MTA.Battle
             float tremor = (_victory || _pTremor <= 0f) ? 0f : Mathf.Sin(t * _pTremorFreq + ph) * _pTremor;  // element shiver
             float hover = _victory ? 0f : Mathf.Sin(t * 1.6f + ph) * _pHover;                    // mages/supports float
             Vector2 idle = new Vector2(step + jitter * 0.4f + tremor,
-                                       Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * _pFreq) + ph)) * bob + hover + jitter * 0.5f);
+                                       Mathf.Abs(Mathf.Sin(t * (_victory ? 6f : 2.3f * _pFreq) + ph)) * bob + hover + jitter * 0.5f + (_victory ? 0f : _cStance));
             float breathe = 1f + Mathf.Sin(t * 3f * _pFreq + _basePos.y * 0.01f) * (_victory ? 0.08f : 0.045f);
             Vector2 animOff = Vector2.zero; float animScale = 1f;
             float meshLean = 0f, hitWobble = 0f;
@@ -399,11 +431,15 @@ namespace MTA.Battle
                         meshLean = animOff.x * 0.16f;   // the body bends into the swing (mesh)
                         break;
                     case Anim.Hit:
-                        animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * _animMag, 0f);
-                        _extraTilt = Mathf.Sin(p * 46f) * (1f - p) * 11f * _animMag;   // head-snap away from the blow
+                        // Species-specific hit reaction (Phase 3): Golem barely flinches (Stiff), Jelly
+                        // ripples hard, Turtle takes it (Slide), Phoenix wobbles in the air, others recoil.
+                        float hm = _animMag * (_cHit == HitStyle.Stiff ? 0.4f : _cHit == HitStyle.Ripple ? 1.35f : _cHit == HitStyle.Slide ? 0.7f : 1f);
+                        animOff = new Vector2(Mathf.Sin(p * 50f) * (1f - p) * 8f * hm, 0f);
+                        if (_cHit == HitStyle.AirWobble) animOff.y = Mathf.Sin(p * 30f) * (1f - p) * 7f * _animMag;
+                        _extraTilt = Mathf.Sin(p * 46f) * (1f - p) * 11f * hm;   // head-snap away from the blow
                         flashC = new Color(1f, 1f, 1f, (1f - p) * 0.85f);
-                        animScale = 1f + (1f - p) * 0.06f * _animMag;
-                        hitWobble = (1f - p) * 7f * _animMag;   // body ripples on impact (mesh)
+                        animScale = 1f + (1f - p) * 0.06f * hm;
+                        hitWobble = (1f - p) * 7f * hm * _cElastic;   // elastic bodies ripple more (Jelly), stiff barely (Golem)
                         break;
                     case Anim.Heal:
                         animScale = 1f + Mathf.Sin(p * Mathf.PI) * 0.15f;
@@ -433,7 +469,7 @@ namespace MTA.Battle
             // Feed the mesh-deform animator: chest-rise breathing, idle upper-body sway, attack bend,
             // impact ripple, and idle limb-ripple (only at rest). Makes the flat sprite read animated.
             float breathePx = (breathe - 1f) * ART * 0.5f;
-            PushDeform(step * 0.7f, meshLean, breathePx, hitWobble, _roamFactor * _pLimb);
+            PushDeform(step * 0.7f, meshLean + (_victory ? 0f : _cLean), breathePx, hitWobble, _roamFactor * _pLimb);
             if (_artGroup != null) _artGroup.alpha = _reserveDim;
             if (_impSilT > 0f) { _impSilT -= dt; flashC = new Color(1f, 1f, 1f, 1f); }   // impact-frame silhouette
             if (_flash != null) _flash.color = flashC;
