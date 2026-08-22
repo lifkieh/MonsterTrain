@@ -46,7 +46,7 @@ namespace MTA.Core
                     // Fixed 3-roll order per Damage (RNG contract): crit, dodge, variance.
                     int atkLuck = actor.EffectiveStat(Stat.LUCK);
                     int defLuck = target.EffectiveStat(Stat.LUCK);
-                    bool crit = rng.NextDouble() < StatMath.CritChance(atkLuck, cfg);
+                    bool crit = rng.NextDouble() < StatMath.CritChance(atkLuck, cfg) + actor.bonusCrit;   // + Buffer support crit (0 for normal battles)
                     if (StatMath.ElementForcesCrit(actor.element, target.element)) crit = true;   // element 2.0: advantage = guaranteed crit (roll already consumed → determinism intact)
                     bool dodged = rng.NextDouble() < StatMath.DodgeChance(atkLuck, defLuck, cfg);
                     float varFactor = 1f + cfg.damageVariance * (float)(2.0 * rng.NextDouble() - 1.0);
@@ -57,8 +57,14 @@ namespace MTA.Core
                         * StatMath.StallMultiplier(s.clock, cfg)
                         * StatMath.ElementMultiplier(actor.element, target.element, cfg)
                         * varFactor
-                        * cfg.damageScale;
+                        * cfg.damageScale
+                        * (1f - target.dmgReductionPct);   // Guardian support (0 for normal battles)
                     int final = dodged ? 0 : Math.Max(cfg.minDamage, StatMath.RoundStat(mitigated));
+
+                    // Guardian support: negate the first incoming hit, then absorb with a shield pool
+                    // (both default off ⇒ no effect / determinism intact for normal battles).
+                    if (final > 0 && target.dodgeFirst && !target.dodgeFirstUsed) { target.dodgeFirstUsed = true; final = 0; dodged = true; }
+                    if (final > 0 && target.shieldHp > 0) { int ab = Math.Min(target.shieldHp, final); target.shieldHp -= ab; final -= ab; }
 
                     target.currentHp = Math.Max(0, target.currentHp - final);
                     log.Add(new BattleEvent { t = s.clock, kind = "Action",

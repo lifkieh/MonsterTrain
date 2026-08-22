@@ -25,6 +25,18 @@ namespace MTA.Core
         public ulong initiativeKey;
         public List<StatModifier> modifiers = new List<StatModifier>();
 
+        // --- TYM 2.0 Active+Support (all default 0/false ⇒ NO effect for normal battles; only set
+        // when a team fields supports, so the existing sim/tests/hash are byte-identical). ---
+        public float dmgReductionPct;                 // Guardian: flat incoming reduction
+        public int shieldHp;                          // Guardian: shield pool (absorbs before HP)
+        public bool dodgeFirst, dodgeFirstUsed;       // Guardian: negate the first incoming hit
+        public float regenPerSec;                     // Healer: HP/sec
+        public float emergencyHeal; public bool emergencyUsed;   // Healer: one burst at low HP
+        public bool cleanse; public double lastCleanse;          // Healer: periodic debuff clear
+        public float summonFrac; public double lastSummon;       // Summoner: extra strike (fraction of ATK)
+        public float ultCostReduction;                // Buffer/Void: earlier ultimate
+        public float bonusCrit;                       // Buffer: flat crit chance added
+
         public bool Alive => currentHp > 0;
 
         public void PurgeExpired(double now) =>

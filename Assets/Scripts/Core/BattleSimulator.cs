@@ -37,6 +37,11 @@ namespace MTA.Core
             EmitSpawns(state.teamA, log);
             EmitSpawns(state.teamB, log);
 
+            // TYM 2.0 Active+Support — ModifierPhase (OnBattleStart). No-op unless a team fields
+            // supports, so classic battles stay byte-identical / determinism + hash unchanged.
+            if (a.IsSupportBattle) SupportRuntime.ApplyBattleStart(state, 0, a.supports, log);
+            if (b.IsSupportBattle) SupportRuntime.ApplyBattleStart(state, 1, b.supports, log);
+
             double lastStallTick = cfg.antiStallStart;
 
             while (true)
@@ -72,12 +77,18 @@ namespace MTA.Core
                     actor.cooldownReadyAt[1] = state.clock + actor.skills[1].cooldownSeconds;
                 if (skillIndex == 2) actor.ultimateUsed = true;
 
+                // TYM 2.0 SupportPhase — regen/emergency/cleanse/summon tied to the actor's cadence.
+                // No-op for non-support units (all fields 0) ⇒ classic battles unchanged.
+                double interval = StatMath.ActionInterval(actor.EffectiveStat(Stat.SPD), cfg);
+                var sKilled = SupportRuntime.OnActiveAction(state, actor, interval, log);
+                if (sKilled != null)
+                    log.Add(new BattleEvent { t = state.clock, kind = "Died", targetTeam = sKilled.team, targetSlot = sKilled.slot });
+
                 int enemyTeam = actor.team == 0 ? 1 : 0;
                 if (state.TeamWiped(enemyTeam))
                     return End(state, actor.team, EndReason.Elimination, log);
 
-                actor.nextActionTime = state.clock +
-                    StatMath.ActionInterval(actor.EffectiveStat(Stat.SPD), cfg);
+                actor.nextActionTime = state.clock + interval;
             }
         }
 
@@ -85,8 +96,8 @@ namespace MTA.Core
         static int ChooseSkill(CombatUnit actor, BattleState s, BalanceConfig cfg)
         {
             var ult = actor.skills[2];
-            if (!actor.ultimateUsed && s.clock >= ult.chargeTime &&
-                SkillResolver.HasValidTarget(actor, ult, s)) return 2;
+            if (!actor.ultimateUsed && s.clock >= ult.chargeTime * (1f - actor.ultCostReduction) &&
+                SkillResolver.HasValidTarget(actor, ult, s)) return 2;   // ultCostReduction=0 for normal battles
 
             var active = actor.skills[1];
             if (s.clock >= actor.cooldownReadyAt[1] &&
