@@ -1,0 +1,64 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 03553d4384ae3c841ae273ed7c1b791f, type: 3}
+  m_Name: chronovore
+  m_EditorClassIdentifier: MTA.Data::MTA.Data.MonsterSpecies
+  speciesId: chronovore
+  displayName: Chronovore
+  element: Void
+  evolvesTo: 
+  evolveLevel: 0
+  evolutionOnly: 0
+  baseStats:
+    hp: 110
+    atk: 17
+    def: 15
+    spd: 13
+    intel: 22
+    luck: 10
+  growth:
+    perStat:
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+    - d: 2
+      c: 3
+      b: 2
+      a: 1
+      s: 0
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+    - d: 0
+      c: 1
+      b: 2
+      a: 3
+      s: 2
+    - d: 1
+      c: 2
+      b: 3
+      a: 2
+      s: 1
+  basicSkill: {fileID: 11400000, guid: 75d1f5bbd56de27449ece0608d21519c, type: 2}
+  activeSkill: {fileID: 11400000, guid: 03e920f284795184fbc80ee4447aa148, type: 2}
+  ultimateSkill: {fileID: 11400000, guid: 67f2d9c8d33de62498d6562d0cc8908b, type: 2}
+  portrait: {fileID: 0}
+  battleSprite: {fileID: 0}

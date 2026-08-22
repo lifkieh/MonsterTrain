@@ -54,6 +54,38 @@ namespace MTA.EditorTools
             Debug.Log("MTA: generated 10 skills + 12 species under Assets/Resources/.");
         }
 
+        // TYM 2.0 Phase 7 — the first Void Mythical. Standalone so it never touches the base species.
+        [MenuItem("MTA/Generate Chronovore (Void Mythical)")]
+        public static void GenerateChronovore()
+        {
+            System.IO.Directory.CreateDirectory(SkillDir);
+            System.IO.Directory.CreateDirectory(MonsterDir);
+            var timeRend = Skill("time_rend", SkillSlot.Basic, Stat.INT, 1.05f, EffectKind.Damage);
+            var temporalLock = Skill("temporal_lock", SkillSlot.Active, Stat.INT, 0f, EffectKind.Debuff,
+                                     cd: 9f, rule: TargetRule.Enemy, affected: Stat.SPD, mag: 0.25f, dur: 8f);
+            var temporalCollapse = Skill("temporal_collapse", SkillSlot.Ultimate, Stat.INT, 4.0f, EffectKind.Damage, charge: 16f);
+
+            var sp = ScriptableObject.CreateInstance<MonsterSpecies>();
+            sp.speciesId = "chronovore"; sp.displayName = "Chronovore";
+            sp.element = "Void";                                 // pure-neutral element (no elemental crit either way)
+            sp.baseStats = B(110, 17, 15, 13, 22, 10);           // tot 95 → Mythical; Control (Mage). Strong, not unbeatable.
+            sp.basicSkill = timeRend; sp.activeSkill = temporalLock; sp.ultimateSkill = temporalCollapse;
+            sp.growth = new GrowthProfile();
+            string tend = "BCBBAB";
+            for (int i = 0; i < 6; i++)
+            {
+                int center = "DCBAS".IndexOf(tend[i]);
+                var row = new GrowthProfile.TierWeights();
+                float[] w = new float[5];
+                for (int t = 0; t < 5; t++) w[t] = Mathf.Max(0, 3 - Mathf.Abs(t - center));
+                row.d = w[0]; row.c = w[1]; row.b = w[2]; row.a = w[3]; row.s = w[4];
+                sp.growth.perStat[i] = row;
+            }
+            AssetDatabase.CreateAsset(sp, MonsterDir + "/chronovore.asset");
+            AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
+            Debug.Log("MTA: generated Chronovore (Void mythical) + 3 skills.");
+        }
+
         static StatBlock B(int hp,int atk,int def,int spd,int intel,int luck) =>
             new StatBlock { hp=hp, atk=atk, def=def, spd=spd, intel=intel, luck=luck };
 
