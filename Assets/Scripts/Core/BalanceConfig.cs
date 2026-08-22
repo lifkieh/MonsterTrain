@@ -21,7 +21,9 @@ namespace MTA.Core
         public float dodgePerLuck = 0.004f;      // per (defenderLUCK - attackerLUCK)
         public float dodgeCap = 0.28f;
         public float timingJitter = 0.45f;       // +/- initial action-time jitter (breaks first-strike snowball)
-        public float elementAdvantage = 0.15f;   // elemental-triangle damage swing — meaningful & felt (adv x1.15 / disadv x0.87)
+        public float elementAdvantage = 0.15f;   // (legacy triangle swing — superseded by the fields below)
+        public float elementStrongMult = 1.5f;   // element 2.0: advantage = +50% damage (roadmap Phase 2)
+        public float elementWeakMult = 0.7f;      // element 2.0: disadvantage = -30% damage
 
         // --- SPD -> attacks-per-second curve. Linear-through-origin so ATK-heavy
         //     and SPD-heavy equal budgets produce equal DPS (K-phase parity); a

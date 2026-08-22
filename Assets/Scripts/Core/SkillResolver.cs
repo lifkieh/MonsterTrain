@@ -47,6 +47,7 @@ namespace MTA.Core
                     int atkLuck = actor.EffectiveStat(Stat.LUCK);
                     int defLuck = target.EffectiveStat(Stat.LUCK);
                     bool crit = rng.NextDouble() < StatMath.CritChance(atkLuck, cfg);
+                    if (StatMath.ElementForcesCrit(actor.element, target.element)) crit = true;   // element 2.0: advantage = guaranteed crit (roll already consumed → determinism intact)
                     bool dodged = rng.NextDouble() < StatMath.DodgeChance(atkLuck, defLuck, cfg);
                     float varFactor = 1f + cfg.damageVariance * (float)(2.0 * rng.NextDouble() - 1.0);
 

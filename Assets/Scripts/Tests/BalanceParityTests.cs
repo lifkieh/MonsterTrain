@@ -10,17 +10,27 @@ namespace MTA.Tests
         static BalanceConfig Cfg() => new BalanceConfig();
 
         [Test]
-        public void ElementTriangle_IsCyclicAndSymmetric()
+        public void Element2_0_AdvantageDisadvantageNeutralVoid()
         {
             var c = Cfg();
-            string[][] adv = { new[] { "Fire", "Nature" }, new[] { "Nature", "Water" }, new[] { "Water", "Fire" } };
-            foreach (var p in adv)
-            {
-                Assert.AreEqual(1f + c.elementAdvantage, StatMath.ElementMultiplier(p[0], p[1], c), 1e-5f);
-                Assert.AreEqual(1f / (1f + c.elementAdvantage), StatMath.ElementMultiplier(p[1], p[0], c), 1e-5f);
-            }
-            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "Fire", c), 1e-6f);   // same element neutral
-            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "", c), 1e-6f);       // missing element neutral
+            // advantage ×strong, disadvantage ×weak (derived table)
+            Assert.AreEqual(c.elementStrongMult, StatMath.ElementMultiplier("Fire", "Nature", c), 1e-5f);      // Fire > Nature
+            Assert.AreEqual(c.elementWeakMult,   StatMath.ElementMultiplier("Nature", "Fire", c), 1e-5f);
+            Assert.AreEqual(c.elementStrongMult, StatMath.ElementMultiplier("Lightning", "Water", c), 1e-5f);  // Lightning > Water
+            Assert.AreEqual(c.elementStrongMult, StatMath.ElementMultiplier("Light", "Shadow", c), 1e-5f);     // Light > Shadow
+            Assert.AreEqual(c.elementStrongMult, StatMath.ElementMultiplier("Shadow", "Light", c), 1e-5f);     // Shadow > Light (mutual)
+            // neutral cases
+            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "Fire", c), 1e-6f);
+            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "Metal", c), 1e-6f);   // unrelated pair
+            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "", c), 1e-6f);
+            // guaranteed crit on advantage only
+            Assert.IsTrue(StatMath.ElementForcesCrit("Fire", "Nature"));
+            Assert.IsFalse(StatMath.ElementForcesCrit("Nature", "Fire"));
+            // Void is pure neutral, no crit either way
+            Assert.AreEqual(1f, StatMath.ElementMultiplier("Void", "Fire", c), 1e-6f);
+            Assert.AreEqual(1f, StatMath.ElementMultiplier("Fire", "Void", c), 1e-6f);
+            Assert.IsFalse(StatMath.ElementForcesCrit("Void", "Fire"));
+            Assert.IsFalse(StatMath.ElementForcesCrit("Fire", "Void"));
         }
 
         [Test]

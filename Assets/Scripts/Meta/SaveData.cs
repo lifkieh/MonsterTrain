@@ -11,6 +11,13 @@ namespace MTA.Meta
         public string speciesId;
         public int level = 1;
         public int xp;
+        // --- TYM 2.0 additive (old saves default via these initializers) ---
+        public int count = 1;     // copies owned (gacha dupes / fusion fuel / selling)
+        public int star = 1;      // fusion star 1..5 (higher stats + level cap, no rarity change)
+        public int mastery = 1;   // skill mastery 1..5 (training → damage scale)
+        public int bondXp;        // bond progression (cosmetic unlocks)
+        public int allocHp, allocAtk, allocDef, allocSpd;   // stat allocation spend
+        public int unspent;       // unspent stat points (+2 per level)
     }
 
     // Runtime state for one quest (definition lives in code — see Quests).
@@ -63,6 +70,16 @@ namespace MTA.Meta
         public List<string> seenNews = new List<string>();         // reserved
         public List<int> streakMilestones = new List<int>();       // X+: claimed login-streak milestone days
 
+        // --- TYM 2.0 additive: economy + gacha + auras + feed ---
+        public long supercoins;             // premium currency (earned via achievements/events; accelerate only, never P2W)
+        public long essence;                // from selling monsters → progression
+        public int pityEpic, pityLeg, pityMyth;   // monster-gacha pity counters (pulls since last)
+        public long gachaSeed;              // monster-gacha RNG stream — SEPARATE from the battle sim seed
+        public long auraSeed;               // aura-gacha RNG stream
+        public List<string> auras = new List<string>();   // owned aura ids
+        public string equippedAura = "";
+        public int foodBasic, foodPremium, foodLegendary; // feed inventory
+
         public MonsterSave Find(string speciesId)
         {
             for (int i = 0; i < collection.Count; i++) if (collection[i].speciesId == speciesId) return collection[i];
@@ -114,6 +131,47 @@ namespace MTA.Meta
             while (m.level < MaxLevel && m.xp >= MonsterXpForNext(m.level)) { m.xp -= MonsterXpForNext(m.level); m.level++; }
             return m.level - from;
         }
+
+        // --- TYM 2.0 Phase 4: Feed (food → xp/level, NOT mastery) ---
+        public static readonly int[] FoodXp = { 30, 120, 400 };   // basic / premium / legendary
+        public static int Feed(SaveData d, string id, int foodType)
+        {
+            if (foodType < 0 || foodType > 2) return -1;
+            var m = d.Find(id); if (m == null) return -1;
+            if (foodType == 0) { if (d.foodBasic <= 0) return -1; d.foodBasic--; }
+            else if (foodType == 1) { if (d.foodPremium <= 0) return -1; d.foodPremium--; }
+            else { if (d.foodLegendary <= 0) return -1; d.foodLegendary--; }
+            int from = m.level;
+            m.xp += FoodXp[foodType];
+            while (m.level < MaxLevel && m.xp >= MonsterXpForNext(m.level)) { m.xp -= MonsterXpForNext(m.level); m.level++; }
+            if (m.level >= MaxLevel) m.xp = 0;
+            return m.level - from;
+        }
+
+        // --- TYM 2.0 Phase 5: Stat allocation (+2 points per level; available = derived so it stays
+        // consistent however the monster leveled). Spend on HP/ATK/DEF/SPD. ---
+        public const int PointsPerLevel = 2;
+        public static int StatPointsAvailable(MonsterSave m)
+            => m == null ? 0 : Math.Max(0, (m.level - 1) * PointsPerLevel - (m.allocHp + m.allocAtk + m.allocDef + m.allocSpd));
+        public static bool AllocateStat(MonsterSave m, int stat)   // 0 HP, 1 ATK, 2 DEF, 3 SPD
+        {
+            if (m == null || StatPointsAvailable(m) <= 0) return false;
+            switch (stat) { case 0: m.allocHp++; break; case 1: m.allocAtk++; break; case 2: m.allocDef++; break; case 3: m.allocSpd++; break; default: return false; }
+            return true;
+        }
+
+        // --- TYM 2.0 Phase 6: Skill mastery training (coins, separate from level) + bond ---
+        public const int MasteryTrainCost = 60;
+        public const int MasteryMax = 5;
+        public static bool TrainMastery(SaveData d, string id)
+        {
+            var m = d.Find(id);
+            if (m == null || m.mastery >= MasteryMax || d.coins < MasteryTrainCost) return false;
+            d.coins -= MasteryTrainCost; m.mastery++; d.trainingsDone++;
+            return true;
+        }
+        public static void AddBond(MonsterSave m, int xp) { if (m != null) m.bondXp = Math.Max(0, m.bondXp + xp); }
+        public static int BondLevel(MonsterSave m) => m == null ? 0 : Math.Min(10, m.bondXp / 100);
 
         // Evolution: an owned monster at/above its evolve level transforms into its
         // evolved species in place (keeps level + xp). Returns the new speciesId, or

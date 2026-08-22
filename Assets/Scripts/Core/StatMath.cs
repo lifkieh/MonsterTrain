@@ -33,21 +33,34 @@ namespace MTA.Core
             return Math.Min(Math.Max(d, 0f), c.dodgeCap);
         }
 
-        // Elemental triangle: Fire > Nature > Water > Fire. Advantage boosts damage,
-        // disadvantage reduces it symmetrically; same/none = neutral. Deterministic
-        // (no RNG), so it never touches the growth→crit→dodge→variance contract.
+        // Element system 2.0: ten elements + Void, table in ElementTable (derived from strong relations,
+        // always symmetric-consistent). Advantage = ×elementStrongMult, disadvantage = ×elementWeakMult,
+        // neutral / Void = ×1. Deterministic (no RNG) — never touches the growth→crit→dodge→variance
+        // contract.
         public static float ElementMultiplier(string attacker, string defender, BalanceConfig c)
         {
-            if (string.IsNullOrEmpty(attacker) || string.IsNullOrEmpty(defender) || attacker == defender) return 1f;
-            bool adv = (attacker == "Fire" && defender == "Nature")
-                    || (attacker == "Nature" && defender == "Water")
-                    || (attacker == "Water" && defender == "Fire");
-            if (adv) return 1f + c.elementAdvantage;
-            bool dis = (defender == "Fire" && attacker == "Nature")
-                    || (defender == "Nature" && attacker == "Water")
-                    || (defender == "Water" && attacker == "Fire");
-            if (dis) return 1f / (1f + c.elementAdvantage);
+            int a = ElementTable.Advantage(attacker, defender);
+            if (a > 0) return c.elementStrongMult;
+            if (a < 0) return c.elementWeakMult;
             return 1f;
+        }
+
+        // Elemental advantage forces a guaranteed critical (roadmap Phase 2). The caller still CONSUMES
+        // its crit RNG roll and only overrides the result, so the deterministic draw-order is preserved.
+        public static bool ElementForcesCrit(string attacker, string defender)
+            => ElementTable.Advantage(attacker, defender) > 0;
+
+        // Skill mastery 1..5 → damage multiplier (TYM 2.0 Phase 6, roadmap curve). Deterministic.
+        public static float MasteryMultiplier(int mastery)
+        {
+            switch (mastery < 1 ? 1 : (mastery > 5 ? 5 : mastery))
+            {
+                case 2: return 1.10f;
+                case 3: return 1.20f;
+                case 4: return 1.35f;
+                case 5: return 1.50f;
+                default: return 1.00f;
+            }
         }
 
         public static float StallMultiplier(double t, BalanceConfig c) =>
